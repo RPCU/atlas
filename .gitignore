@@ -1,0 +1,21 @@
+# Task
+.task/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Devbox
+.devbox/
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
