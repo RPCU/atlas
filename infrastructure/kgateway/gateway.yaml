@@ -1,0 +1,57 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: https-external
+  namespace: kgateway-system
+  annotations:
+    cert-manager.io/cluster-issuer: rpcuio
+    kgateway.dev/per-connection-buffer-limit: "128Mi"
+spec:
+  gatewayClassName: kgateway
+  addresses:
+    - type: IPAddress
+      value: 172.16.255.10
+  allowedListeners:
+    namespaces:
+      from: All
+  infrastructure:
+    parametersRef:
+      group: gateway.kgateway.dev
+      kind: GatewayParameters
+      name: gwp-static-ip
+  listeners:
+    - protocol: HTTP
+      port: 80
+      name: http
+      hostname: "*.rpcu.io"
+      allowedRoutes:
+        namespaces:
+          from: All
+    - protocol: HTTPS
+      port: 443
+      name: https
+      hostname: "*.rpcu.io"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: rpcu-io-wildcard-tls
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect-external
+  namespace: kgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      sectionName: http
+      namespace: kgateway-system
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

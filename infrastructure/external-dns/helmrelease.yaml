@@ -1,0 +1,33 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: internal-dns
+  values:
+    provider: cloudflare
+    cloudflare:
+      apiToken: "" # Placeholder for secret injection
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: external-dns-cloudflare
+            key: api-token
+    txtOwnerId: production
+    domainFilters:
+      - rpcu.io
+    policy: sync
+    sources:
+      - ingress
+      - gateway-httproute

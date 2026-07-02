@@ -1,3 +1,6 @@
 resources:
   - gitrepository.yaml
   - flux-kustomization.yaml
+  - kgateway.yaml
+  - cert-manager.yaml
+  - external-dns.yaml
