@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  labels:
+    app: qbittorrent
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      securityContext:
+        sysctls:
+          - name: "net.ipv4.conf.all.src_valid_mark"
+            value: "1"
+      containers:
+        - name: qbittorrent
+          image: binhex/arch-qbittorrentvpn
+          command:
+            - /bin/bash
+            - -c
+            - cp /config/wireguard/wg0.conf.tmpl /config/wireguard/wg0.conf && init.sh
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              memory: 1800Mi
+              cpu: 250m
+            limits:
+              memory: 2Gi
+              cpu: 1
+          ports:
+            - name: qbittorrent
+              containerPort: 8080
+          env:
+            - name: VPN_ENABLED
+              value: "no"
+            - name: VPN_PROV
+              value: "custom"
+            - name: VPN_CLIENT
+              value: "wireguard"
+            - name: ENABLE_STARTUP_SCRIPTS
+              value: "no"
+            - name: STRICT_PORT_FORWARD
+              value: "no"
+            - name: LAN_NETWORK
+              value: "10.0.0.0/8,172.16.0.0/16,172.17.0.0/16"
+            - name: DEBUG
+              value: "false"
+            - name: WEBUI_PORT
+              value: "8080"
+            - name: UMASK
+              value: "000"
+            - name: PUID
+              value: "0"
+            - name: PGID
+              value: "0"
+          readinessProbe:
+            tcpSocket:
+              port: qbittorrent
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: qbittorrent
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+            - name: movies
+              mountPath: /media/movies
+            - name: tvshows
+              mountPath: /media/tv
+            - name: qbittorrent-wg
+              mountPath: /config/wireguard/wg0.conf.tmpl
+              subPath: wg0.conf
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: qbittorrent-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: qbittorrent-downloads
+        - name: movies
+          persistentVolumeClaim:
+            claimName: movies
+        - name: tvshows
+          persistentVolumeClaim:
+            claimName: tvshows
+        - name: qbittorrent-wg
+          secret:
+            secretName: qbittorrent-wg

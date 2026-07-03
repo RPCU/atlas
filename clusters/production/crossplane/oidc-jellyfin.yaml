@@ -27,7 +27,7 @@ spec:
     orgId: "369994019545117645"
     postLogoutRedirectUris:
       - "*"
-    projectId: "370001231784969038"
+    projectId: "370001231784969038" # public
     redirectUris:
       - https://jellyfin.rpcu.io/sso/OID/redirect/zitadel
       - https://jellyfin.rpcu.io/sso/OID/r/zitadel

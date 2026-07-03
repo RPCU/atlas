@@ -1,0 +1,57 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oauth2-proxy
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.6.0
+      sourceRef:
+        kind: HelmRepository
+        name: oauth2-proxy
+  values:
+    config:
+      configFile: |-
+        email_domains = [ "*" ]
+        provider = "oidc"
+        user_id_claim = "sub"
+        provider_display_name = "ZITADEL"
+        pass_access_token = true
+        skip_provider_button = true
+        cookie_secure = false
+        upstreams = [
+          "http://qbittorrent.media:8080"
+        ]
+        redirect_url = "https://qbittorrent.production.rpcu.lan/oauth2/callback"
+        oidc_issuer_url = "https://zitadel.rpcu.io"
+    extraEnv:
+      - name: OAUTH2_PROXY_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: qbittorrent-oidc
+            key: attribute.client_id
+      - name: OAUTH2_PROXY_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: qbittorrent-oidc
+            key: attribute.client_secret
+      - name: OAUTH2_PROXY_COOKIE_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: oauth2-proxy-secrets
+            key: cookie-secret
+    resources:
+      limits:
+        cpu: 100m
+        memory: 300Mi
+      requests:
+        cpu: 100m
+        memory: 300Mi
+    proxyVarsAsSecrets: false
+    replicaCount: 1
+    podDisruptionBudget:
+      enabled: false
+      minAvailable: 1
+    httpScheme: http

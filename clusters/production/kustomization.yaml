@@ -8,3 +8,6 @@ resources:
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml
   - jellyfin
+  - radarr
+  - prowlarr
+  - qbittorrent

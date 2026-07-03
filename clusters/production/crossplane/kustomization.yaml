@@ -12,3 +12,6 @@ resources:
   - external-secret.yaml
   - providerConfig.yaml
   - oidc-jellyfin.yaml
+  - oidc-radarr.yaml
+  - oidc-prowlarr.yaml
+  - oidc-qbittorrent.yaml

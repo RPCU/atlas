@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9696
+      targetPort: prowlarr
+  selector:
+    app: prowlarr
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaresolverr
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8191
+      targetPort: flaresolverr
+  selector:
+    app: prowlarr
