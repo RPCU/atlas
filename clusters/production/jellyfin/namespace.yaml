@@ -1,0 +1,6 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: media
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled

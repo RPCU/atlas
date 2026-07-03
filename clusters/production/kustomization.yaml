@@ -4,3 +4,8 @@ resources:
   - kgateway.yaml
   - cert-manager.yaml
   - external-dns.yaml
+  - crossplane.yaml
+  - crossplane-zitadel.yaml
+  - crossplane-resources.yaml
+  - jellyfin
+  - jellyswarrm

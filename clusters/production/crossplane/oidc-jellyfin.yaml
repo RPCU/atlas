@@ -1,0 +1,40 @@
+# jellyfin OIDC application on the SHARED Zitadel instance, managed by the atlas
+# production cluster's Crossplane.
+#
+# orgId / projectId are referenced by literal external ID (not orgIdRef /
+# projectIdRef) on purpose: the org "rpcu" and its projects are owned by the argus
+# openstack cluster overlay and do NOT exist on this cluster, so a ref would never
+# resolve here. IDs taken from the live Zitadel objects:
+#   org rpcu = 369994019545117645
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: jellyfin
+spec:
+  forProvider:
+    accessTokenRoleAssertion: false
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: false
+    idTokenUserinfoAssertion: false
+    name: jellyfin
+    orgId: "369994019545117645"
+    postLogoutRedirectUris:
+      - "*"
+    projectId: "370001231784969038"
+    redirectUris:
+      - https://jellyfin.rpcu.io/sso/OID/redirect/zitadel
+      - https://jellyfin.rpcu.io/sso/OID/r/zitadel
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: jellyfin-oidc
+    namespace: media

@@ -1,0 +1,20 @@
+# production-cluster ProviderConfig for the Crossplane Zitadel provider. Points at
+# the crossplane-provider-zitadel admin-credentials secret in the zitadel
+# namespace, which is materialized by ESO from the shared mgmt Vault
+# (external-secret.yaml → Vault path secrets-production/zitadel/crossplane, key
+# credentials) rather than created by hand. This is a SEPARATE ProviderConfig from
+# the argus clusters': each cluster runs its own Crossplane and needs its own
+# "default" ProviderConfig. The shared Zitadel platform (org/projects/roles/
+# actions) is owned exclusively by the argus openstack cluster; this cluster only
+# creates its own OIDC app(s) here.
+apiVersion: zitadel.didactiklabs.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: crossplane-provider-zitadel
+      namespace: zitadel
+      key: credentials

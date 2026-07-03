@@ -1,0 +1,14 @@
+# production-cluster Zitadel resources: this cluster's own ProviderConfig and the
+# jellyfin Oidc app. The shared Zitadel platform (org/projects/roles/actions) is
+# owned by the argus openstack cluster overlay — it must not be duplicated here,
+# or the clusters would fight over the same external Zitadel objects.
+#
+# The provider admin credentials (crossplane-provider-zitadel secret) are pulled
+# out of the shared mgmt Vault via ESO (external-secret.yaml) instead of being
+# created by hand.
+namespace: zitadel
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - providerConfig.yaml
+  - oidc-jellyfin.yaml
