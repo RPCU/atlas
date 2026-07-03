@@ -8,4 +8,3 @@ resources:
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml
   - jellyfin
-  - jellyswarrm
