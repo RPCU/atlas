@@ -74,9 +74,9 @@ spec:
             - name: config
               mountPath: /config
             - name: movies
-              mountPath: /media/movies
-            - name: tvshows
-              mountPath: /media/tv
+              mountPath: /movies
+            - name: qbittorrent-downloads
+              mountPath: /downloads
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -84,6 +84,6 @@ spec:
         - name: movies
           persistentVolumeClaim:
             claimName: movies
-        - name: tvshows
+        - name: qbittorrent-downloads
           persistentVolumeClaim:
-            claimName: tvshows
+            claimName: qbittorrent-downloads

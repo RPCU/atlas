@@ -78,9 +78,9 @@ spec:
             - name: downloads
               mountPath: /downloads
             - name: movies
-              mountPath: /media/movies
+              mountPath: /movies
             - name: tvshows
-              mountPath: /media/tv
+              mountPath: /tvshows
             - name: qbittorrent-wg
               mountPath: /config/wireguard/wg0.conf.tmpl
               subPath: wg0.conf
