@@ -15,7 +15,8 @@ metadata:
   name: qbittorrent-downloads
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
+  storageClassName: ceph-cephfs
   resources:
     requests:
       storage: 200Gi

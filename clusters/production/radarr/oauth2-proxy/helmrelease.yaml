@@ -25,7 +25,7 @@ spec:
           "http://radarr.media:7878"
         ]
         redirect_url = "https://radarr.production.rpcu.lan/oauth2/callback"
-        oidc_issuer_url = "https://zitadel.rpcu.io"
+        oidc_issuer_url = "https://rpcu-gabeck.eu1.zitadel.cloud"
     extraEnv:
       - name: OAUTH2_PROXY_CLIENT_ID
         valueFrom:
