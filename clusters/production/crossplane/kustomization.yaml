@@ -15,3 +15,4 @@ resources:
   - oidc-radarr.yaml
   - oidc-prowlarr.yaml
   - oidc-qbittorrent.yaml
+  - oidc-seerr.yaml

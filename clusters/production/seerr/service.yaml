@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: seerr
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5055
+      targetPort: seerr
+  selector:
+    app: seerr

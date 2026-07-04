@@ -339,7 +339,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 2026 (Initial AGENTS.md. Verified live: all RWX PVCs Bound on `ceph-cephfs` = `nfs.csi.k8s.io` (csi-driver-nfs), Cinder default SC for RWO.)
+**Last Updated**: July 04, 2026 (Updated seerr OIDC postStart script; verified RWO/RWX storage configuration.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

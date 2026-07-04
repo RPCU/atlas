@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seerr
+  labels:
+    app: seerr
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seerr
+  template:
+    metadata:
+      labels:
+        app: seerr
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: seerr
+          image: ghcr.io/seerr-team/seerr:preview-new-oidc
+          resources:
+            requests:
+              memory: 200Mi
+              cpu: 100m
+            limits:
+              memory: 500Mi
+              cpu: 500m
+          ports:
+            - name: seerr
+              containerPort: 5055
+          env:
+            - name: TZ
+              value: "Europe/Paris"
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: seerr-oidc
+                  key: attribute.client_id
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: seerr-oidc
+                  key: attribute.client_secret
+          readinessProbe:
+            tcpSocket:
+              port: seerr
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: seerr
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    mkdir -p /app/config
+                    while [ ! -f /app/config/settings.json ]; do
+                      echo "Waiting for settings.json creation..."
+                      sleep 2
+                    done
+                    echo "Ensuring OIDC configuration..."
+                    node -e "
+                      const fs = require('fs');
+                      const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
+                      if (cfg.oidc && cfg.oidcLogin === true) {
+                        console.log('OIDC configuration already present and enabled.');
+                        process.exit(0);
+                      }
+                      console.log('Injecting/Updating OIDC configuration...');
+                      cfg.main.oidcLogin = true;
+                      cfg.oidc = {
+                        providers: [{
+                          slug: 'zitadel',
+                          name: 'Zitadel',
+                          issuerUrl: 'https://rpcu-gabeck.eu1.zitadel.cloud',
+                          clientId: process.env.OIDC_CLIENT_ID,
+                          clientSecret: process.env.OIDC_CLIENT_SECRET,
+                          newUserLogin: true
+                        }]
+                      };
+                      fs.writeFileSync('/app/config/settings.json', JSON.stringify(cfg, null, 2));
+                    "
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: seerr-config
