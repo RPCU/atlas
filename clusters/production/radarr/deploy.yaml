@@ -71,14 +71,17 @@ spec:
                     sed -i "s/<AuthenticationMethod>.*<\/AuthenticationMethod>/<AuthenticationMethod>$AUTHENTICATION_METHOD<\/AuthenticationMethod>/g" /config/config.xml
                     sed -i "s/<ApiKey>.*<\/ApiKey>/<ApiKey>$API_KEY<\/ApiKey>/g" /config/config.xml
                     echo "Waiting for Radarr API..."
-                    until curl -sf -o /dev/null -H "X-Api-Key: $API_KEY" http://localhost:7878/api/v3/system/status; do
-                      sleep 5
-                    done
-                    echo "Adding root folders..."
-                    curl -sf -X POST http://localhost:7878/api/v3/rootfolder \
-                      -H "Content-Type: application/json" \
-                      -H "X-Api-Key: $API_KEY" \
-                      -d '{"path":"/movies"}' || echo "Failed to add /movies root folder"
+                    until curl -sf http://localhost:7878/api/v3/system/status -H "X-Api-Key: $API_KEY" > /dev/null 2>&1; do sleep 2; done
+                    HAS_MOVIES=$(curl -sf http://localhost:7878/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/movies"')
+                    if [ "$HAS_MOVIES" -eq 0 ]; then
+                      echo "Adding /movies root folder via API..."
+                      curl -sf -X POST http://localhost:7878/api/v3/rootfolder \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $API_KEY" \
+                        -d '{"path":"/movies"}'
+                    else
+                      echo "/movies root folder already exists."
+                    fi
           volumeMounts:
             - name: config
               mountPath: /config
