@@ -23,6 +23,7 @@ spec:
     redirectUris:
       - https://seerr.rpcu.io/login
       - https://seerr.rpcu.io/api/v1/auth/oidc/callback/zitadel
+      - https://seerr.rpcu.io/profile/settings/linked-accounts
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false
