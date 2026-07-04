@@ -25,6 +25,8 @@ spec:
           env:
             - name: MALLOC_TRIM_THRESHOLD_
               value: "100000"
+            - name: DOTNET_SYSTEM_IO_DISABLESTATX
+              value: "1"
           resources:
             requests:
               memory: 1000Mi

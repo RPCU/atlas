@@ -47,6 +47,8 @@ spec:
                 secretKeyRef:
                   name: radarr-secrets
                   key: API_KEY
+            - name: DOTNET_SYSTEM_IO_DISABLESTATX
+              value: "1"
           readinessProbe:
             tcpSocket:
               port: radarr
