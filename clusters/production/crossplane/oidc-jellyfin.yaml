@@ -32,6 +32,7 @@ spec:
       - https://jellyfin.rpcu.io/sso/OID/redirect/zitadel
       - https://jellyfin.rpcu.io/sso/OID/r/zitadel
       - https://jellyfin.rpcu.io/TwoFactorAuth/Oidc/Callback/sign-in-with-zitadel
+      - https://jellyfin.rpcu.io/TwoFactorAuth/Oidc/Callback/zitadel
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false
