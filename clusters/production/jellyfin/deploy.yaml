@@ -16,8 +16,6 @@ spec:
     metadata:
       labels: *default
     spec:
-      securityContext:
-        fsGroup: 1000
       terminationGracePeriodSeconds: 10
       automountServiceAccountToken: false
       containers:
