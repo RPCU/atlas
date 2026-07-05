@@ -75,7 +75,6 @@ spec:
                     echo "Waiting for Sonarr API..."
                     until curl -sf http://localhost:8989/api/v3/system/status -H "X-Api-Key: $API_KEY" > /dev/null 2>&1; do sleep 2; done
                     HAS_TV=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/tvshows"')
-                    HAS_ANIMES=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/animes"')
                     if [ "$HAS_TV" -eq 0 ]; then
                       echo "Adding /tvshows root folder via API..."
                       curl -sf -X POST http://localhost:8989/api/v3/rootfolder \
@@ -85,20 +84,13 @@ spec:
                     else
                       echo "/tvshows root folder already exists."
                     fi
-                    if [ "$HAS_ANIMES" -eq 0 ]; then
-                      echo "Adding /animes root folder via API..."
-                      curl -sf -X POST http://localhost:8989/api/v3/rootfolder \
-                        -H "Content-Type: application/json" \
-                        -H "X-Api-Key: $API_KEY" \
-                        -d '{"path":"/animes"}'
-                    else
-                      echo "/animes root folder already exists."
-                    fi
           volumeMounts:
             - name: config
               mountPath: /config
             - name: tvshows
               mountPath: /tvshows
+            - name: animes
+              mountPath: /animes
             - name: qbittorrent-downloads
               mountPath: /downloads
       volumes:
@@ -108,6 +100,9 @@ spec:
         - name: tvshows
           persistentVolumeClaim:
             claimName: tvshows
+        - name: animes
+          persistentVolumeClaim:
+            claimName: animes
         - name: qbittorrent-downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
