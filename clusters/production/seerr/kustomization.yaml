@@ -6,5 +6,6 @@ resources:
   - service.yaml
   - httproute.yaml
   - pvc.yaml
+  - generator.yaml
   - secrets.yaml
   - pushsecret-oidc.yaml
