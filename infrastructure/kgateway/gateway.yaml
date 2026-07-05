@@ -4,6 +4,7 @@ metadata:
   name: https-external
   namespace: kgateway-system
   annotations:
+    external-dns.alpha.kubernetes.io/target: rpcu.io
     cert-manager.io/cluster-issuer: rpcuio
     kgateway.dev/per-connection-buffer-limit: "128Mi"
 spec:
