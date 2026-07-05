@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  labels:
+    app: sonarr
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: sonarr
+          image: ghcr.io/linuxserver/sonarr:4.0.17-develop
+          resources:
+            requests:
+              memory: 800Mi
+              cpu: 100m
+            limits:
+              memory: 800Mi
+              cpu: 1
+          ports:
+            - name: sonarr
+              containerPort: 8989
+          env:
+            - name: AUTHENTICATION_METHOD
+              value: 'External'
+            - name: PUID
+              value: '1000'
+            - name: PGID
+              value: '1000'
+            - name: TZ
+              value: 'Europe/Paris'
+            - name: UMASK
+              value: '022'
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sonarr-secrets
+                  key: API_KEY
+            - name: DOTNET_SYSTEM_IO_DISABLESTATX
+              value: '1'
+          readinessProbe:
+            tcpSocket:
+              port: sonarr
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: sonarr
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    while [ ! -f /config/config.xml ]; do
+                      echo "Waiting for config.xml creation..."
+                      sleep 1
+                    done
+                    sed -i "s/<AuthenticationMethod>.*<\/AuthenticationMethod>/<AuthenticationMethod>$AUTHENTICATION_METHOD<\/AuthenticationMethod>/g" /config/config.xml
+                    sed -i "s/<ApiKey>.*<\/ApiKey>/<ApiKey>$API_KEY<\/ApiKey>/g" /config/config.xml
+                    echo "Waiting for Sonarr API..."
+                    until curl -sf http://localhost:8989/api/v3/system/status -H "X-Api-Key: $API_KEY" > /dev/null 2>&1; do sleep 2; done
+                    HAS_TV=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/tvshows"')
+                    HAS_ANIMES=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/animes"')
+                    if [ "$HAS_TV" -eq 0 ]; then
+                      echo "Adding /shows root folder via API..."
+                      curl -sf -X POST http://localhost:8989/api/v3/rootfolder \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $API_KEY" \
+                        -d '{"path":"/tvshows"}'
+                    else
+                      echo "/tvshows root folder already exists."
+                    fi
+                    if [ "$HAS_ANIMES" -eq 0 ]; then
+                      echo "Adding /animes root folder via API..."
+                      curl -sf -X POST http://localhost:8989/api/v3/rootfolder \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $API_KEY" \
+                        -d '{"path":"/animes"}'
+                    else
+                      echo "/animes root folder already exists."
+                    fi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: tvshows
+              mountPath: /tvshows
+            - name: qbittorrent-downloads
+              mountPath: /downloads
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: sonarr-config
+        - name: tvshows
+          persistentVolumeClaim:
+            claimName: tvshows
+        - name: qbittorrent-downloads
+          persistentVolumeClaim:
+            claimName: qbittorrent-downloads
