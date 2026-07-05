@@ -77,7 +77,7 @@ spec:
                     HAS_TV=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/tvshows"')
                     HAS_ANIMES=$(curl -sf http://localhost:8989/api/v3/rootfolder -H "X-Api-Key: $API_KEY" | grep -c '"/animes"')
                     if [ "$HAS_TV" -eq 0 ]; then
-                      echo "Adding /shows root folder via API..."
+                      echo "Adding /tvshows root folder via API..."
                       curl -sf -X POST http://localhost:8989/api/v3/rootfolder \
                         -H "Content-Type: application/json" \
                         -H "X-Api-Key: $API_KEY" \
