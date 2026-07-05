@@ -62,6 +62,7 @@ spec:
                   - -c
                   - |
                     mkdir -p /app/config
+                    sleep 20
                     while [ ! -f /app/config/settings.json ]; do
                       echo "Waiting for settings.json creation..."
                       sleep 2
@@ -70,10 +71,6 @@ spec:
                     node -e "
                       const fs = require('fs');
                       const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
-                      if (cfg.oidc && cfg.oidcLogin === true) {
-                        console.log('OIDC configuration already present and enabled.');
-                        process.exit(0);
-                      }
                       console.log('Injecting/Updating OIDC configuration...');
                       cfg.main.oidcLogin = true;
                       cfg.oidc = {
