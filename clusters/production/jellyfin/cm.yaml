@@ -37,14 +37,14 @@ data:
       ],
       "menuLinks": [
           {
-              "name": "Request on Ombi",
+              "name": "Request on Seer",
               "icon": "cloud_download",
-              "url": "https://ombi.yourdomain.com/"
+              "url": "https://seerr.rpcu.io/"
           },
           {
-              "name": "Download Jellyfin Client",
+              "name": "Download Moonfin Client",
               "icon": "get_app",
-              "url": "https://github.com/jellyfin/jellyfin-media-player/releases"
+              "url": "https://moonfin.io/"
           }
       ],
       "servers": [],
