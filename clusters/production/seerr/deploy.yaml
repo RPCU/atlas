@@ -20,7 +20,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: seerr
-          image: ghcr.io/seerr-team/seerr@sha256:a14a9c326881fdce70b00df3fc095f5b5b128f5552677f677cd3788e757fb4e6
+          image: zadki3l/seerr:michaelhthomas-oidc-0bfd615
           resources:
             requests:
               memory: 200Mi
@@ -44,6 +44,11 @@ spec:
                 secretKeyRef:
                   name: seerr-oidc
                   key: attribute.client_secret
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: seerr-config
+                  key: sessionSecret
           readinessProbe:
             tcpSocket:
               port: seerr
@@ -62,7 +67,6 @@ spec:
                   - -c
                   - |
                     mkdir -p /app/config
-                    sleep 20
                     while [ ! -f /app/config/settings.json ]; do
                       echo "Waiting for settings.json creation..."
                       sleep 2
@@ -73,6 +77,7 @@ spec:
                       const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
                       console.log('Injecting/Updating OIDC configuration...');
                       cfg.main.oidcLogin = true;
+                      cfg.sessionSecret = process.env.SESSION_SECRET;
                       cfg.oidc = {
                         providers: [{
                           slug: 'zitadel',
