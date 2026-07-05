@@ -21,6 +21,33 @@ spec:
       containers:
         - name: seerr
           image: zadki3l/seerr:michaelhthomas-oidc-0bfd615
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if [ -f /app/config/settings.json ]; then
+                mkdir -p /app/config
+                node -e "
+                  const fs = require('fs');
+                  const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
+                  console.log('Pre-start: Injecting/Updating OIDC configuration...');
+                  cfg.main.oidcLogin = true;
+                  cfg.main.mediaServerLogin = false;
+                  cfg.sessionSecret = process.env.SESSION_SECRET;
+                  cfg.oidc = {
+                    providers: [{
+                      slug: 'zitadel',
+                      name: 'Zitadel',
+                      issuerUrl: 'https://rpcu-gabeck.eu1.zitadel.cloud',
+                      clientId: process.env.OIDC_CLIENT_ID,
+                      clientSecret: process.env.OIDC_CLIENT_SECRET,
+                      newUserLogin: true
+                    }]
+                  };
+                  fs.writeFileSync('/app/config/settings.json', JSON.stringify(cfg, null, 2));
+                "
+              fi
+              exec npm start
           resources:
             requests:
               memory: 200Mi
@@ -33,7 +60,7 @@ spec:
               containerPort: 5055
           env:
             - name: TZ
-              value: "Europe/Paris"
+              value: 'Europe/Paris'
             - name: OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -49,12 +76,6 @@ spec:
                 secretKeyRef:
                   name: seerr-config
                   key: sessionSecret
-            - name: COOKIE_SAMESITE
-              value: "none"
-            - name: COOKIE_SECURE
-              value: "true"
-            - name: TRUST_PROXY
-              value: "true"
           readinessProbe:
             tcpSocket:
               port: seerr
@@ -83,7 +104,7 @@ spec:
                       const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
                       console.log('Injecting/Updating OIDC configuration...');
                       cfg.main.oidcLogin = true;
-                      cfg.main.baseUrl = 'https://seerr.rpcu.io';
+                      cfg.main.mediaServerLogin = false;
                       cfg.sessionSecret = process.env.SESSION_SECRET;
                       cfg.oidc = {
                         providers: [{
