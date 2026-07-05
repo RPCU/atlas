@@ -49,6 +49,12 @@ spec:
                 secretKeyRef:
                   name: seerr-config
                   key: sessionSecret
+            - name: COOKIE_SAMESITE
+              value: "none"
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: TRUST_PROXY
+              value: "true"
           readinessProbe:
             tcpSocket:
               port: seerr
@@ -77,6 +83,7 @@ spec:
                       const cfg = JSON.parse(fs.readFileSync('/app/config/settings.json', 'utf8'));
                       console.log('Injecting/Updating OIDC configuration...');
                       cfg.main.oidcLogin = true;
+                      cfg.main.baseUrl = 'https://seerr.rpcu.io';
                       cfg.sessionSecret = process.env.SESSION_SECRET;
                       cfg.oidc = {
                         providers: [{
