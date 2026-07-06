@@ -17,3 +17,4 @@ resources:
   - oidc-qbittorrent.yaml
   - oidc-sonarr.yaml
   - oidc-seerr.yaml
+  - oidc-bazarr.yaml

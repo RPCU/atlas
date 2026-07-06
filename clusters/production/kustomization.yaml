@@ -13,3 +13,4 @@ resources:
   - qbittorrent
   - sonarr
   - seerr
+  - bazarr

@@ -133,6 +133,7 @@ the `atlas` Flux Kustomization reconciles):
   - `oauth2-proxy/` - HelmRelease `radarr-oauth2-proxy` (chart oauth2-proxy v10.6.0), OIDC issuer `https://rpcu-gabeck.eu1.zitadel.cloud`, client id/secret straight from the Crossplane connection secret (`attribute.client_id`/`attribute.client_secret` keys), cookie secret ← Vault `secrets-production/oauth2-proxy/config`
 - `prowlarr/` - Indexer manager, image `ghcr.io/linuxserver/prowlarr:2.4.0-nightly` + flaresolverr-compatible sidecar `ghcr.io/thephaseless/byparr:latest` (port 8191). Same pattern as radarr (`prowlarr.production.rpcu.lan`, oauth2-proxy, Vault `secrets-production/prowlarr/*`)
 - `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn` (untagged), **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + RWX PVCs `qbittorrent-downloads`, `movies`, `tvshows`. Internal HTTPRoute behind oauth2-proxy like the arrs
+- `bazarr/` - Subtitle manager, image `ghcr.io/linuxserver/bazarr:1.5.7-development` (adapted from `../bealv`). No API key ExternalSecret (bazarr auth is set to External via oauth2-proxy; no `secrets.yaml`). Mounts `bazarr-config` (RWO) + shared RWX library PVCs `movies`, `tvshows`, `animes` and `qbittorrent-downloads`. Same pattern as the arrs (`bazarr.production.rpcu.lan`, oauth2-proxy → `bazarr.media:6767`, `pushsecret-oidc.yaml` → Vault `secrets-production/bazarr/oidc`)
 
 ### infrastructure/ - Production-Specific Glue
 
@@ -339,7 +340,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 04, 2026 (Updated seerr OIDC postStart script; verified RWO/RWX storage configuration.)
+**Last Updated**: July 06, 2026 (Added bazarr subtitle-manager app adapted from ../bealv: media-ns deployment behind oauth2-proxy at bazarr.production.rpcu.lan, mounting shared RWX library PVCs, plus its Crossplane Oidc app.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

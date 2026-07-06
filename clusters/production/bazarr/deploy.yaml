@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bazarr
+  labels:
+    app: bazarr
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bazarr
+  template:
+    metadata:
+      labels:
+        app: bazarr
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: bazarr
+          image: ghcr.io/linuxserver/bazarr:1.5.7-development
+          resources:
+            requests:
+              memory: 800Mi
+              cpu: 100m
+            limits:
+              memory: 800Mi
+              cpu: 1
+          ports:
+            - name: bazarr
+              containerPort: 6767
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "Europe/Paris"
+            - name: UMASK
+              value: "022"
+          readinessProbe:
+            tcpSocket:
+              port: bazarr
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: bazarr
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: movies
+              mountPath: /movies
+            - name: tvshows
+              mountPath: /tvshows
+            - name: animes
+              mountPath: /animes
+            - name: qbittorrent-downloads
+              mountPath: /downloads
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: bazarr-config
+        - name: movies
+          persistentVolumeClaim:
+            claimName: movies
+        - name: tvshows
+          persistentVolumeClaim:
+            claimName: tvshows
+        - name: animes
+          persistentVolumeClaim:
+            claimName: animes
+        - name: qbittorrent-downloads
+          persistentVolumeClaim:
+            claimName: qbittorrent-downloads
