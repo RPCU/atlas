@@ -4,10 +4,10 @@ metadata:
   name: jellysweep
 spec:
   parentRefs:
-    - name: https
+    - name: https-external
       namespace: kgateway-system
   hostnames:
-    - "jellysweep.production.rpcu.lan"
+    - 'jellysweep.rpcu.io'
   rules:
     - matches:
         - path:
