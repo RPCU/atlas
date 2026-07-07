@@ -29,7 +29,7 @@ data:
         enabled: true
         name: "ZITADEL"
         issuer: "https://rpcu-gabeck.eu1.zitadel.cloud"
-        redirect_url: "https://jellysweep.production.rpcu.lan/auth/oidc/callback"
+        redirect_url: "https://jellysweep.rpcu.io/auth/oidc/callback"
         use_pkce: true
         admin_group: "public-admin"
 

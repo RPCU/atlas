@@ -20,12 +20,12 @@ spec:
     idTokenRoleAssertion: true
     idTokenUserinfoAssertion: true
     name: jellysweep
-    orgId: "369994019545117645"
+    orgId: '369994019545117645'
     postLogoutRedirectUris:
-      - "*"
-    projectId: "370001231784969038" # public
+      - '*'
+    projectId: '370001231784969038' # public
     redirectUris:
-      - https://jellysweep.production.rpcu.lan/auth/oidc/callback
+      - https://jellysweep.rpcu.io/auth/oidc/callback
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false
