@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jellysweep-config
+data:
+  config.yml: |-
+    log_level: "info"
+    dry_run: false
+    listen: "0.0.0.0:3002"
+    cleanup_schedule: "0 */12 * * *"
+    cleanup_mode: "all"
+    keep_count: 1
+    session_max_age: 172800
+    secure_cookies: true
+    server_url: "https://jellysweep.production.rpcu.lan"
+
+    # SQLite database persisted on the jellysweep-data PVC
+    database:
+      type: "sqlite"
+      path: "/app/data/jellysweep.db"
+
+    # Native Zitadel OIDC auth. Group claim "groups" carries Zitadel role keys
+    # (via the argus-owned groupsClaim action). Admins are members of the
+    # "public-admin" role on the public project.
+    auth:
+      jellyfin:
+        enabled: false
+      oidc:
+        enabled: true
+        name: "ZITADEL"
+        issuer: "https://rpcu-gabeck.eu1.zitadel.cloud"
+        redirect_url: "https://jellysweep.production.rpcu.lan/auth/oidc/callback"
+        use_pkce: true
+        admin_group: "public-admin"
+
+    leaving_collections_enabled: true
+    leaving_collections_movie_name: "Leaving Movies"
+    leaving_collections_tv_name: "Leaving TV Shows"
+
+    # Library names must match the Jellyfin library names exactly.
+    libraries:
+      "Movies":
+        enabled: true
+        cleanup_delay: 60
+        protection_period: 90
+        filter:
+          content_age_threshold: 120
+          last_stream_threshold: 90
+          content_size_threshold: 1073741824
+          exclude_tags:
+            - "jellysweep-exclude"
+            - "keep"
+            - "favorites"
+      "TV Shows":
+        enabled: true
+        cleanup_delay: 60
+        protection_period: 90
+        filter:
+          content_age_threshold: 120
+          last_stream_threshold: 90
+          content_size_threshold: 2147483648
+          exclude_tags:
+            - "jellysweep-exclude"
+            - "ongoing"
+            - "keep"
+
+    # External service integrations (in-cluster service DNS names).
+    jellyfin:
+      url: "http://jellyfin.media:8096"
+    jellyseerr:
+      url: "http://seerr.media:5055"
+    sonarr:
+      url: "http://sonarr.media:8989"
+    radarr:
+      url: "http://radarr.media:7878"
+    jellystat:
+      url: "http://jellystat.media:3000"
+
+    cache:
+      enabled: true
+      type: "memory"

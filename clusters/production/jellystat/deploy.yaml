@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellystat
+  labels:
+    app: jellystat
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jellystat
+  template:
+    metadata:
+      labels:
+        app: jellystat
+    spec:
+      containers:
+        - name: jellystat
+          image: cyfershepard/jellystat:1.1.11
+          resources:
+            requests:
+              memory: 300Mi
+              cpu: 100m
+            limits:
+              memory: 600Mi
+              cpu: 1
+          ports:
+            - name: jellystat
+              containerPort: 3000
+          env:
+            - name: TZ
+              value: "Europe/Paris"
+            - name: POSTGRES_IP
+              value: "jellystat-postgres-rw"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "jfstat"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: jellystat-db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jellystat-db
+                  key: password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jellystat-db
+                  key: JWT_SECRET
+          readinessProbe:
+            httpGet:
+              path: /auth/isConfigured
+              port: jellystat
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /auth/isConfigured
+              port: jellystat
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: backup
+              mountPath: /app/backend/backup-data
+      volumes:
+        - name: backup
+          persistentVolumeClaim:
+            claimName: jellystat-backup

@@ -18,3 +18,5 @@ resources:
   - oidc-sonarr.yaml
   - oidc-seerr.yaml
   - oidc-bazarr.yaml
+  - oidc-jellystat.yaml
+  - oidc-jellysweep.yaml

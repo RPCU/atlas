@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellysweep
+  labels:
+    app: jellysweep
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jellysweep
+  template:
+    metadata:
+      labels:
+        app: jellysweep
+    spec:
+      containers:
+        - name: jellysweep
+          image: ghcr.io/jon4hz/jellysweep:v0.15.0
+          args:
+            - serve
+          resources:
+            requests:
+              memory: 200Mi
+              cpu: 100m
+            limits:
+              memory: 500Mi
+              cpu: 1
+          ports:
+            - name: jellysweep
+              containerPort: 3002
+          env:
+            - name: TZ
+              value: "Europe/Paris"
+            - name: JELLYSWEEP_LISTEN
+              value: "0.0.0.0:3002"
+            # Secrets override the config file values
+            - name: JELLYSWEEP_SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: session-key
+            - name: JELLYSWEEP_AUTH_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-oidc
+                  key: attribute.client_id
+            - name: JELLYSWEEP_AUTH_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-oidc
+                  key: attribute.client_secret
+            - name: JELLYSWEEP_JELLYFIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: jellyfin-api-key
+            - name: JELLYSWEEP_JELLYSEERR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: seerr-api-key
+            - name: JELLYSWEEP_JELLYSTAT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: jellystat-api-key
+            - name: JELLYSWEEP_RADARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: radarr-api-key
+            - name: JELLYSWEEP_SONARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jellysweep-secrets
+                  key: sonarr-api-key
+          readinessProbe:
+            tcpSocket:
+              port: jellysweep
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: jellysweep
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: config
+          configMap:
+            name: jellysweep-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: jellysweep-data

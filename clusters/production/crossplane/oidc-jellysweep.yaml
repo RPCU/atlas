@@ -1,0 +1,35 @@
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: jellysweep
+spec:
+  forProvider:
+    # jellysweep authenticates users natively via OIDC and reads the "groups"
+    # claim (populated by the argus-owned groupsClaim action from the user's
+    # role grants). admin_group = "public-admin" on the public project, so role
+    # assertion must be enabled for the claim to appear in the token/userinfo.
+    accessTokenRoleAssertion: true
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: true
+    idTokenUserinfoAssertion: true
+    name: jellysweep
+    orgId: "369994019545117645"
+    postLogoutRedirectUris:
+      - "*"
+    projectId: "370001231784969038" # public
+    redirectUris:
+      - https://jellysweep.production.rpcu.lan/auth/oidc/callback
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: jellysweep-oidc
+    namespace: media

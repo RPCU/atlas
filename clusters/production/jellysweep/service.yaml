@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellysweep
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3002
+      targetPort: jellysweep
+  selector:
+    app: jellysweep

@@ -4,6 +4,7 @@ resources:
   - kgateway.yaml
   - cert-manager.yaml
   - external-dns.yaml
+  - cnpg.yaml
   - crossplane.yaml
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml
@@ -14,3 +15,5 @@ resources:
   - sonarr
   - seerr
   - bazarr
+  - jellystat
+  - jellysweep

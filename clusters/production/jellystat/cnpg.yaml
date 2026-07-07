@@ -1,0 +1,17 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: jellystat-postgres
+spec:
+  instances: 1
+  # jellystat expects the DB name "jfstat" (POSTGRES_DB default) with the
+  # bootstrap user as owner. Creds come from the ESO-managed jellystat-db secret.
+  bootstrap:
+    initdb:
+      database: jfstat
+      owner: jellystat
+      secret:
+        name: jellystat-db
+  storage:
+    size: 10Gi
+    # RWO Cinder default StorageClass (argus-provided)

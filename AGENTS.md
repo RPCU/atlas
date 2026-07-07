@@ -95,6 +95,7 @@ the `atlas` Flux Kustomization reconciles):
 - `cert-manager.yaml` - Flux Kustomization `cert-manager-issuer` → `./infrastructure/cert-manager` (wait: true)
 - `kgateway.yaml` - Flux Kustomization `kgateway-external` → `./infrastructure/kgateway` (wait: true)
 - `external-dns.yaml` - Flux Kustomization `external-dns` → `./infrastructure/external-dns` (wait: true)
+- `cnpg.yaml` - Flux Kustomization `cnpg` → `./infrastructure/cnpg` (wait: true) — installs the CloudNativePG operator + CRDs consumed by jellystat's Postgres `Cluster`
 - `crossplane.yaml` - Flux Kustomization `crossplane` → **argus** `./infrastructure/crossplane` (sourceRef GitRepository `flux-system`, i.e. the argus repo — the path does not exist in atlas)
 - `crossplane-zitadel.yaml` - Flux Kustomization `crossplane-zitadel` → **argus** `./infrastructure/crossplane-zitadel` (dependsOn crossplane). Provider package only.
 - `crossplane-resources.yaml` - Flux Kustomization `crossplane-resources` → `./clusters/production/crossplane` (dependsOn crossplane-zitadel, **prune: false**)
@@ -106,6 +107,8 @@ the `atlas` Flux Kustomization reconciles):
 - `providerConfig.yaml` - Zitadel `ProviderConfig` `default` (`zitadel.didactiklabs.io/v1beta1`) → that secret
 - `oidc-jellyfin.yaml` - `Oidc` app for jellyfin's in-app SSO plugin (redirect URIs at `jellyfin.rpcu.io/sso/...` + TwoFactorAuth callback), project `370001231784969038` ("public"), connection secret `jellyfin-oidc` → ns media
 - `oidc-radarr.yaml` / `oidc-prowlarr.yaml` / `oidc-qbittorrent.yaml` - `Oidc` apps for the oauth2-proxy fronting each app (redirect `https://<app>.production.rpcu.lan/oauth2/callback`), project `370001231734928333` ("administration"), connection secrets `<app>-oidc` → ns media
+- `oidc-jellystat.yaml` - `Oidc` app for jellystat's oauth2-proxy (redirect `https://jellystat.production.rpcu.lan/oauth2/callback`), project `370001231734928333` ("administration"), connection secret `jellystat-oidc` → ns media
+- `oidc-jellysweep.yaml` - `Oidc` app for jellysweep's **native** OIDC login (redirect `https://jellysweep.production.rpcu.lan/auth/oidc/callback`), project `370001231784969038` ("public"), **role assertion enabled** (id/access token + userinfo) so the argus `groupsClaim` action surfaces the `groups` claim jellysweep matches against `admin_group: public-admin`. Connection secret `jellysweep-oidc` → ns media
 
 > **Shared Zitadel ownership.** The Zitadel org `rpcu` (`369994019545117645`)
 > and its projects are OWNED by the argus openstack cluster overlay. Atlas
@@ -134,6 +137,15 @@ the `atlas` Flux Kustomization reconciles):
 - `prowlarr/` - Indexer manager, image `ghcr.io/linuxserver/prowlarr:2.4.0-nightly` + flaresolverr-compatible sidecar `ghcr.io/thephaseless/byparr:latest` (port 8191). Same pattern as radarr (`prowlarr.production.rpcu.lan`, oauth2-proxy, Vault `secrets-production/prowlarr/*`)
 - `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn` (untagged), **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + RWX PVCs `qbittorrent-downloads`, `movies`, `tvshows`. Internal HTTPRoute behind oauth2-proxy like the arrs
 - `bazarr/` - Subtitle manager, image `ghcr.io/linuxserver/bazarr:1.5.7-development` (adapted from `../bealv`). No API key ExternalSecret (bazarr auth is set to External via oauth2-proxy; no `secrets.yaml`). Mounts `bazarr-config` (RWO) + shared RWX library PVCs `movies`, `tvshows`, `animes` and `qbittorrent-downloads`. Same pattern as the arrs (`bazarr.production.rpcu.lan`, oauth2-proxy → `bazarr.media:6767`, `pushsecret-oidc.yaml` → Vault `secrets-production/bazarr/oidc`)
+- `jellystat/` - Jellyfin statistics app, image `cyfershepard/jellystat:1.1.11`. **Internal** behind oauth2-proxy at `jellystat.production.rpcu.lan` (oauth2-proxy → `jellystat.media:3000`, project `370001231734928333` "administration", `pushsecret-oidc.yaml` → Vault `secrets-production/jellystat/oidc`). Needs a **Postgres** DB provisioned via **CNPG**:
+  - `cnpg.yaml` - CNPG `Cluster` `jellystat-postgres` (1 instance, 10Gi on default Cinder SC, bootstrap db `jfstat`/owner `jellystat`). CNPG exposes the RW service `jellystat-postgres-rw` which the app connects to via `POSTGRES_IP`.
+  - `secrets.yaml` - ExternalSecret `jellystat-db` ← Vault `secrets-production/jellystat/config` (`username`/`password`/`jwtSecret`), templated as a `kubernetes.io/basic-auth` secret so CNPG can consume it as the bootstrap secret AND the app can read `POSTGRES_USER`/`POSTGRES_PASSWORD`/`JWT_SECRET`. **Populate this Vault path out of band before deploy.**
+  - `deploy.yaml` - Deployment (1 replica, Recreate), backup PVC `jellystat-backup` (5Gi RWO) mounted at `/app/backend/backup-data`
+- `jellysweep/` - Smart Jellyfin cleanup tool, image `ghcr.io/jon4hz/jellysweep:v0.15.0`. **Internal** at `jellysweep.production.rpcu.lan` but uses **native Zitadel OIDC** (NOT oauth2-proxy) — the HTTPRoute points straight at `jellysweep:3002`. `dry_run: false` (**live deletions**), cleanup_mode `all`. Plugged into the whole stack: connects to `jellyfin.media:8096`, `sonarr.media:8989`, `radarr.media:7878`, `seerr.media:5055` (jellyseerr) and `jellystat.media:3000` via API keys.
+  - `cm.yaml` - ConfigMap `jellysweep-config` (`config.yml`: libraries `Movies`/`TV Shows` — names must match Jellyfin library names, service URLs, OIDC auth block with `admin_group: public-admin`, SQLite DB at `/app/data/jellysweep.db`). Secret values (API keys, session key, OIDC client id/secret) are injected via `JELLYSWEEP_*` env vars which override the file.
+  - `secrets.yaml` - ExternalSecret `jellysweep-secrets`: `session-key`/`jellyfin-api-key`/`seerr-api-key`/`jellystat-api-key` ← Vault `secrets-production/jellysweep/config` (**populate out of band**); **reuses** existing `radarr-api-key` ← `secrets-production/radarr/config` and `sonarr-api-key` ← `secrets-production/sonarr/config`.
+  - OIDC (`oidc-jellysweep.yaml`, project `370001231784969038` "public", redirect `.../auth/oidc/callback`, role assertion enabled so the argus `groupsClaim` action surfaces the `groups` claim). `admin_group` = `public-admin`. `pushsecret-oidc.yaml` → Vault `secrets-production/jellysweep/oidc`.
+  - `pvc.yaml` - `jellysweep-data` 2Gi RWO for the SQLite DB
 
 ### infrastructure/ - Production-Specific Glue
 
@@ -153,6 +165,12 @@ targets Designate/`production.rpcu.lan`):
 Only the public Gateway:
 
 - `gateway.yaml` - Gateway `https-external` (ns kgateway-system, gatewayClassName `kgateway`, **static address `172.16.255.10`**, GatewayParameters `gwp-static-ip`), listeners HTTP/HTTPS for `*.rpcu.io`, TLS Terminate with `rpcu-io-wildcard-tls` (annotation `cert-manager.io/cluster-issuer: rpcuio`), 128Mi per-connection buffer; + HTTPRoute `https-redirect-external` (301 → https)
+
+**cnpg/** — The **CloudNativePG** Postgres operator (NOT argus/Sveltos-provided; installed HERE because no repo previously needed Postgres). Consumed by jellystat's `Cluster` CR:
+
+- `namespace.yaml` - Namespace `cnpg-system`
+- `helmrepo.yaml` - HelmRepository `cloudnative-pg` → `https://cloudnative-pg.github.io/charts`
+- `helmrelease.yaml` - HelmRelease `cloudnative-pg` (chart `cloudnative-pg` **0.29.0**, appVersion 1.30.0), installs the `postgresql.cnpg.io` CRDs (`crds.create: true`, install `Create` / upgrade `CreateReplace`)
 
 ---
 
@@ -199,10 +217,12 @@ KV-v2 mount `secrets-production`). Paths in use:
 
 - `secrets-production/cloudflare/api` — Cloudflare token (cert-manager DNS-01 + public ExternalDNS)
 - `secrets-production/zitadel/crossplane` — Zitadel JWT-profile credentials for provider-zitadel (populated out of band)
-- `secrets-production/{radarr,prowlarr}/config` — app API keys
+- `secrets-production/{radarr,prowlarr,sonarr}/config` — app API keys (`API_KEY`; sonarr/radarr keys are also reused by jellysweep)
 - `secrets-production/qbittorrent/config` — wireguard `wg0.conf`
 - `secrets-production/oauth2-proxy/config` — shared oauth2-proxy cookie secret
-- `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read.
+- `secrets-production/jellystat/config` — jellystat Postgres `username`/`password` + `jwtSecret` (bootstrap secret for the CNPG cluster AND app creds; **populate out of band**)
+- `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
+- `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent,jellystat,jellysweep,...}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read.
 
 ### Version Pins
 
@@ -215,6 +235,9 @@ KV-v2 mount `secrets-production`). Paths in use:
 | byparr         | latest (⚠ unpinned)      | `clusters/production/prowlarr/deploy.yaml`                                        |
 | qbittorrentvpn | untagged (⚠ unpinned)    | `clusters/production/qbittorrent/deploy.yaml`                                     |
 | external-dns   | `"*"` (⚠ unpinned chart) | `infrastructure/external-dns/helmrelease.yaml`                                    |
+| jellystat      | 1.1.11                    | `clusters/production/jellystat/deploy.yaml`                                       |
+| jellysweep     | v0.15.0                   | `clusters/production/jellysweep/deploy.yaml`                                      |
+| cloudnative-pg | 0.29.0 (chart)            | `infrastructure/cnpg/helmrelease.yaml`                                            |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.
@@ -244,10 +267,11 @@ Reconciliation order (from `clusters/production/`):
 3. **cert-manager-issuer** → ACME `rpcuio` ClusterIssuer (needs cert-manager + vault-backend)
 4. **kgateway-external** → public `https-external` Gateway (needs kgateway controller + `gwp-static-ip`)
 5. **external-dns** → Cloudflare ExternalDNS (needs the argus HelmRepository in ns internal-dns + vault-backend)
-6. **crossplane** → Crossplane Helm install from the ARGUS repo
-7. **crossplane-zitadel** (dependsOn crossplane) → provider-zitadel package from the ARGUS repo
-8. **crossplane-resources** (dependsOn crossplane-zitadel, prune: false) → ProviderConfig + the 4 Oidc apps
-9. **Apps** (applied directly by the `atlas` Kustomization, no per-app Flux Kustomizations): jellyfin, radarr, prowlarr, qbittorrent — each app's oauth2-proxy HelmRelease waits on its `<app>-oidc` connection secret (written by Crossplane) and the cookie-secret ExternalSecret
+6. **cnpg** → CloudNativePG operator Helm install (provides `postgresql.cnpg.io` CRDs before jellystat's `Cluster` is applied)
+7. **crossplane** → Crossplane Helm install from the ARGUS repo
+8. **crossplane-zitadel** (dependsOn crossplane) → provider-zitadel package from the ARGUS repo
+9. **crossplane-resources** (dependsOn crossplane-zitadel, prune: false) → ProviderConfig + the Oidc apps
+10. **Apps** (applied directly by the `atlas` Kustomization, no per-app Flux Kustomizations): jellyfin, radarr, prowlarr, qbittorrent, sonarr, seerr, bazarr, jellystat, jellysweep — each oauth2-proxy'd app's HelmRelease waits on its `<app>-oidc` connection secret (written by Crossplane) and the cookie-secret ExternalSecret; jellystat additionally waits on the CNPG `jellystat-postgres` cluster; jellysweep uses native OIDC (no oauth2-proxy)
 
 ---
 
