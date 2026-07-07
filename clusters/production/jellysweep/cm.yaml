@@ -51,7 +51,19 @@ data:
             - "jellysweep-exclude"
             - "keep"
             - "favorites"
-      "TV Shows":
+      "Shows":
+        enabled: true
+        cleanup_delay: 60
+        protection_period: 90
+        filter:
+          content_age_threshold: 120
+          last_stream_threshold: 90
+          content_size_threshold: 2147483648
+          exclude_tags:
+            - "jellysweep-exclude"
+            - "ongoing"
+            - "keep"
+      "Animes":
         enabled: true
         cleanup_delay: 60
         protection_period: 90
