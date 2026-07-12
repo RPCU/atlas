@@ -33,7 +33,7 @@ spec:
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
               memory: 2000Mi
-          image: jellyfin/jellyfin:10.11.11
+          image: docker.io/jellyfin/jellyfin:10.11.11
           ports:
             - containerPort: 8096
               name: jellyfin
