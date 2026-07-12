@@ -63,12 +63,15 @@ spec:
               mountPath: /config
             - name: cache
               mountPath: /cache
-            - name: tvshows
+            - name: media
               mountPath: /tvshows
-            - name: animes
+              subPath: tvshows
+            - name: media
               mountPath: /animes
-            - name: movies
+              subPath: animes
+            - name: media
               mountPath: /movies
+              subPath: movies
             - name: transcodes
               mountPath: /transcodes
             - name: configjson
@@ -81,15 +84,9 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: config
-        - name: tvshows
+        - name: media
           persistentVolumeClaim:
-            claimName: tvshows
-        - name: animes
-          persistentVolumeClaim:
-            claimName: animes
-        - name: movies
-          persistentVolumeClaim:
-            claimName: movies
+            claimName: media
         - name: cache
           persistentVolumeClaim:
             claimName: cache

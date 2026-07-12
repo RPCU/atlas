@@ -8,6 +8,7 @@ resources:
   - crossplane.yaml
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml
+  - media
   - jellyfin
   - radarr
   - prowlarr

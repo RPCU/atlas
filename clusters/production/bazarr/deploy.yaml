@@ -51,27 +51,22 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: movies
+            - name: media
               mountPath: /movies
-            - name: tvshows
+              subPath: movies
+            - name: media
               mountPath: /tvshows
-            - name: animes
+              subPath: tvshows
+            - name: media
               mountPath: /animes
-            - name: qbittorrent-downloads
+              subPath: animes
+            - name: media
               mountPath: /downloads
+              subPath: downloads
       volumes:
         - name: config
           persistentVolumeClaim:
             claimName: bazarr-config
-        - name: movies
+        - name: media
           persistentVolumeClaim:
-            claimName: movies
-        - name: tvshows
-          persistentVolumeClaim:
-            claimName: tvshows
-        - name: animes
-          persistentVolumeClaim:
-            claimName: animes
-        - name: qbittorrent-downloads
-          persistentVolumeClaim:
-            claimName: qbittorrent-downloads
+            claimName: media
