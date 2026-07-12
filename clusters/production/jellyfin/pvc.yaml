@@ -12,42 +12,6 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: tvshows
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ceph-cephfs
-  resources:
-    requests:
-      storage: 200Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: animes
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ceph-cephfs
-  resources:
-    requests:
-      storage: 200Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: movies
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ceph-cephfs
-  resources:
-    requests:
-      storage: 300Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
   name: cache
 spec:
   accessModes:

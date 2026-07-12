@@ -125,18 +125,18 @@ the `atlas` Flux Kustomization reconciles):
   - `deploy.yaml` - Deployment (1 replica, Recreate, fsGroup 1000, postStart sed hacks on the jellyfin-web bundle, GPU passthrough TODO/commented)
   - `service.yaml` - ClusterIP 8096, `appProtocol: kubernetes.io/wss` (WebSocket)
   - `httproute.yaml` - **Public**: `jellyfin.rpcu.io` on the `https-external` Gateway, 3600s timeouts. No oauth2-proxy — auth is the in-app Zitadel SSO plugin
-  - `pvc.yaml` - `config` 10Gi RWO, `cache` 30Gi RWO, `transcodes` 100Gi RWO (default SC = Cinder); `tvshows` 200Gi / `animes` 200Gi / `movies` 300Gi — **RWX on `ceph-cephfs`**
+  - `pvc.yaml` - `config` 10Gi RWO, `cache` 30Gi RWO, `transcodes` 100Gi RWO (default SC = Cinder). Media libraries served from the shared `media` PVC via subPath
   - `cm.yaml` + `custom-css-cm.yaml` - jellyfin-web `config.json` + custom CSS
   - `pushsecret-oidc.yaml` - ESO `PushSecret`: `jellyfin-oidc` → Vault `secrets-production/jellyfin/oidc`
 - `radarr/` - Movie manager, image `ghcr.io/linuxserver/radarr:6.2.1-nightly`
-  - `deploy.yaml` - AUTHENTICATION_METHOD=External, API key injected via postStart from ExternalSecret; mounts `radarr-config` + the shared RWX PVCs `movies` and `qbittorrent-downloads`
+  - `deploy.yaml` - AUTHENTICATION_METHOD=External, API key injected via postStart from ExternalSecret; mounts `radarr-config` + shared `media` PVC (subPath: `movies`, `downloads`)
   - `httproute.yaml` - **Internal**: `radarr.production.rpcu.lan` on the Sveltos-pushed `https` Gateway → backend `radarr-oauth2-proxy:80`
   - `secrets.yaml` - ExternalSecret `radarr-secrets` (API_KEY ← Vault `secrets-production/radarr/config`)
   - `pushsecret-oidc.yaml` - PushSecret `radarr-oidc` → Vault `secrets-production/radarr/oidc`
   - `oauth2-proxy/` - HelmRelease `radarr-oauth2-proxy` (chart oauth2-proxy v10.6.0), OIDC issuer `https://rpcu-gabeck.eu1.zitadel.cloud`, client id/secret straight from the Crossplane connection secret (`attribute.client_id`/`attribute.client_secret` keys), cookie secret ← Vault `secrets-production/oauth2-proxy/config`
 - `prowlarr/` - Indexer manager, image `ghcr.io/linuxserver/prowlarr:2.4.0-nightly` + flaresolverr-compatible sidecar `ghcr.io/thephaseless/byparr:latest` (port 8191). Same pattern as radarr (`prowlarr.production.rpcu.lan`, oauth2-proxy, Vault `secrets-production/prowlarr/*`)
-- `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn` (untagged), **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + RWX PVCs `qbittorrent-downloads`, `movies`, `tvshows`. Internal HTTPRoute behind oauth2-proxy like the arrs
-- `bazarr/` - Subtitle manager, image `ghcr.io/linuxserver/bazarr:1.5.7-development` (adapted from `../bealv`). No API key ExternalSecret (bazarr auth is set to External via oauth2-proxy; no `secrets.yaml`). Mounts `bazarr-config` (RWO) + shared RWX library PVCs `movies`, `tvshows`, `animes` and `qbittorrent-downloads`. Same pattern as the arrs (`bazarr.production.rpcu.lan`, oauth2-proxy → `bazarr.media:6767`, `pushsecret-oidc.yaml` → Vault `secrets-production/bazarr/oidc`)
+- `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn` (untagged), **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + shared `media` PVC (subPath: `downloads`, `movies`, `tvshows`). Internal HTTPRoute behind oauth2-proxy like the arrs
+- `bazarr/` - Subtitle manager, image `ghcr.io/linuxserver/bazarr:1.5.7-development` (adapted from `../bealv`). No API key ExternalSecret (bazarr auth is set to External via oauth2-proxy; no `secrets.yaml`). Mounts `bazarr-config` (RWO) + shared `media` PVC (subPath: `movies`, `tvshows`, `animes`, `downloads`). Same pattern as the arrs (`bazarr.production.rpcu.lan`, oauth2-proxy → `bazarr.media:6767`, `pushsecret-oidc.yaml` → Vault `secrets-production/bazarr/oidc`)
 - `jellystat/` - Jellyfin statistics app, image `cyfershepard/jellystat:1.1.11`. **Internal** behind oauth2-proxy at `jellystat.production.rpcu.lan` (oauth2-proxy → `jellystat.media:3000`, project `370001231734928333` "administration", `pushsecret-oidc.yaml` → Vault `secrets-production/jellystat/oidc`). Needs a **Postgres** DB provisioned via **CNPG**:
   - `cnpg.yaml` - CNPG `Cluster` `jellystat-postgres` (1 instance, 10Gi on default Cinder SC, bootstrap db `jfstat`/owner `jellystat`). CNPG exposes the RW service `jellystat-postgres-rw` which the app connects to via `POSTGRES_IP`.
   - `secrets.yaml` - ExternalSecret `jellystat-db` ← Vault `secrets-production/jellystat/config` (`username`/`password`/`jwtSecret`), templated as a `kubernetes.io/basic-auth` secret so CNPG can consume it as the bootstrap secret AND the app can read `POSTGRES_USER`/`POSTGRES_PASSWORD`/`JWT_SECRET`. **Populate this Vault path out of band before deploy.**
@@ -202,9 +202,12 @@ argus/Sveltos-delivered:
   (which could never provision from VMs — the Rook cluster is pod-networked),
   so atlas PVC manifests did not need to change. Defined in argus at
   `infrastructure/csi-driver-nfs/storageclass.yaml`.
-- The RWX PVCs (`movies`, `tvshows`, `animes`, `qbittorrent-downloads`) are
-  **shared across app deployments** within ns `media` (radarr and qbittorrent
-  mount jellyfin's library PVCs) — this is why RWX is required.
+- The `media` PVC (900Gi RWX on `ceph-cephfs`) is a **single consolidated
+  volume** shared across all media apps via `subPath` mounts. It contains
+  `movies/`, `tvshows/`, `animes/`, and `downloads/` subdirectories, enabling
+  hardlinks between downloads and library folders (required for the *arr stack).
+  This replaced the former 4 separate PVCs (`movies`, `tvshows`, `animes`,
+  `qbittorrent-downloads`) which could not support cross-PVC hardlinks.
 - PVC `spec` is immutable once created (except size increase). Changing a
   PVC's `storageClassName` in Git requires deleting/recreating the live PVC
   (data migration!) — never do this casually on the media libraries.
@@ -388,12 +391,12 @@ Atlas is the **application layer** for RPCU's production cluster:
 ✅ OIDC SSO for every app via Crossplane-managed Zitadel clients (+ oauth2-proxy for the arrs)
 ✅ Public (`*.rpcu.io`, Cloudflare/Let's Encrypt) and internal (`*.production.rpcu.lan`, Vault PKI/Designate) ingress split across two Gateways
 ✅ All secrets via Vault + External Secrets Operator (read AND push-back)
-✅ RWO storage from Cinder, RWX from CephFS-over-NFS (`ceph-cephfs`) — drivers delivered by argus/Sveltos
+✅ RWO storage from Cinder, single RWX `media` PVC on CephFS-over-NFS (`ceph-cephfs`) — drivers delivered by argus/Sveltos
 ✅ Platform substrate (cluster, CNI, Flux, kgateway, cert-manager, CSI) owned by the argus repo
 
 ---
 
-**Last Updated**: July 2026 (Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Grouped the six oauth2-proxy releases + the LinuxServer *arr images (digest-pinned) in `renovate.json5`. See "Dependency Updates (Renovate)" in Section 2. — Prior: Added bazarr subtitle-manager app adapted from ../bealv: media-ns deployment behind oauth2-proxy at bazarr.production.rpcu.lan, mounting shared RWX library PVCs, plus its Crossplane Oidc app.)
+**Last Updated**: July 2026 (Consolidated media storage: merged 4 separate RWX PVCs (`movies`, `tvshows`, `animes`, `qbittorrent-downloads`) into a single `media` PVC (900Gi) to enable hardlinks between downloads and library folders. Updated all 5 app deployments (jellyfin, radarr, sonarr, qbittorrent, bazarr) to use `subPath` mounts. Migration script at `clusters/production/media/migrate.sh`. — Prior: Renovate is now self-hosted in GitHub Actions...)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

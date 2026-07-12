@@ -85,17 +85,16 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: movies
+            - name: media
               mountPath: /movies
-            - name: qbittorrent-downloads
+              subPath: movies
+            - name: media
               mountPath: /downloads
+              subPath: downloads
       volumes:
         - name: config
           persistentVolumeClaim:
             claimName: radarr-config
-        - name: movies
+        - name: media
           persistentVolumeClaim:
-            claimName: movies
-        - name: qbittorrent-downloads
-          persistentVolumeClaim:
-            claimName: qbittorrent-downloads
+            claimName: media
