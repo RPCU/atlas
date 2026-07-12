@@ -135,7 +135,7 @@ the `atlas` Flux Kustomization reconciles):
   - `pushsecret-oidc.yaml` - PushSecret `radarr-oidc` → Vault `secrets-production/radarr/oidc`
   - `oauth2-proxy/` - HelmRelease `radarr-oauth2-proxy` (chart oauth2-proxy v10.6.0), OIDC issuer `https://rpcu-gabeck.eu1.zitadel.cloud`, client id/secret straight from the Crossplane connection secret (`attribute.client_id`/`attribute.client_secret` keys), cookie secret ← Vault `secrets-production/oauth2-proxy/config`
 - `prowlarr/` - Indexer manager, image `ghcr.io/linuxserver/prowlarr:2.4.0-nightly` + flaresolverr-compatible sidecar `ghcr.io/thephaseless/byparr:latest` (port 8191). Same pattern as radarr (`prowlarr.production.rpcu.lan`, oauth2-proxy, Vault `secrets-production/prowlarr/*`)
-- `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn` (untagged), **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + shared `media` PVC (subPath: `downloads`, `movies`, `tvshows`). Internal HTTPRoute behind oauth2-proxy like the arrs
+- `qbittorrent/` - Torrent client, image `binhex/arch-qbittorrentvpn:5.2.3-1-01`, **privileged** (wireguard VPN support; `VPN_ENABLED` currently "no"; wg0.conf ← Vault `secrets-production/qbittorrent/config`). Mounts `qbittorrent-config` (RWO) + shared `media` PVC (subPath: `downloads`, `movies`, `tvshows`). Internal HTTPRoute behind oauth2-proxy like the arrs
 - `bazarr/` - Subtitle manager, image `ghcr.io/linuxserver/bazarr:1.5.7-development` (adapted from `../bealv`). No API key ExternalSecret (bazarr auth is set to External via oauth2-proxy; no `secrets.yaml`). Mounts `bazarr-config` (RWO) + shared `media` PVC (subPath: `movies`, `tvshows`, `animes`, `downloads`). Same pattern as the arrs (`bazarr.production.rpcu.lan`, oauth2-proxy → `bazarr.media:6767`, `pushsecret-oidc.yaml` → Vault `secrets-production/bazarr/oidc`)
 - `jellystat/` - Jellyfin statistics app, image `cyfershepard/jellystat:1.1.11`. **Internal** behind oauth2-proxy at `jellystat.production.rpcu.lan` (oauth2-proxy → `jellystat.media:3000`, project `370001231734928333` "administration", `pushsecret-oidc.yaml` → Vault `secrets-production/jellystat/oidc`). Needs a **Postgres** DB provisioned via **CNPG**:
   - `cnpg.yaml` - CNPG `Cluster` `jellystat-postgres` (1 instance, 10Gi on default Cinder SC, bootstrap db `jfstat`/owner `jellystat`). CNPG exposes the RW service `jellystat-postgres-rw` which the app connects to via `POSTGRES_IP`.
@@ -158,7 +158,7 @@ Only the public ACME issuer:
 zone** `rpcu.io` (distinct from the argus/Sveltos internal ExternalDNS that
 targets Designate/`production.rpcu.lan`):
 
-- `helmrelease.yaml` - HelmRelease `external-dns` (ns `external-dns`, chart version `"*"` — unpinned; sourceRef reuses the argus-owned HelmRepository `external-dns` in ns `internal-dns`). `provider: cloudflare`, `txtOwnerId: production`, `domainFilters: [rpcu.io]`, `policy: sync`, sources ingress + gateway-httproute
+- `helmrelease.yaml` - HelmRelease `external-dns` (ns `external-dns`, chart version `1.21.1`; sourceRef reuses the argus-owned HelmRepository `external-dns` in ns `internal-dns` → `https://kubernetes-sigs.github.io/external-dns/`). `provider: cloudflare`, `txtOwnerId: production`, `domainFilters: [rpcu.io]`, `policy: sync`, sources ingress + gateway-httproute
 - `secrets.yaml` - ExternalSecret `external-dns-cloudflare` (api-token ← Vault `secrets-production/cloudflare/api`)
 
 **kgateway/** — NOT a kgateway install (controller comes from Sveltos).
@@ -235,9 +235,9 @@ KV-v2 mount `secrets-production`). Paths in use:
 | jellyfin       | 10.11.11                  | `clusters/production/jellyfin/deploy.yaml`                                        |
 | radarr         | 6.2.1-nightly             | `clusters/production/radarr/deploy.yaml`                                          |
 | prowlarr       | 2.4.0-nightly             | `clusters/production/prowlarr/deploy.yaml`                                        |
-| byparr         | latest (⚠ unpinned)      | `clusters/production/prowlarr/deploy.yaml`                                        |
-| qbittorrentvpn | untagged (⚠ unpinned)    | `clusters/production/qbittorrent/deploy.yaml`                                     |
-| external-dns   | `"*"` (⚠ unpinned chart) | `infrastructure/external-dns/helmrelease.yaml`                                    |
+| byparr         | latest (digest-pinned)    | `clusters/production/prowlarr/deploy.yaml`                                        |
+| qbittorrentvpn | 5.2.3-1-01                | `clusters/production/qbittorrent/deploy.yaml`                                     |
+| external-dns   | 1.21.1 (chart)            | `infrastructure/external-dns/helmrelease.yaml`                                    |
 | jellystat      | 1.1.11                    | `clusters/production/jellystat/deploy.yaml`                                       |
 | jellysweep     | v0.15.0                   | `clusters/production/jellysweep/deploy.yaml`                                      |
 | cloudnative-pg | 0.29.0 (chart)            | `infrastructure/cnpg/helmrelease.yaml`                                            |
@@ -276,15 +276,18 @@ grouped into one PR; the LinuxServer `*arr` images
 `-nightly`/`-develop`/`-development` tags are only trackable by digest). `major`
 updates get `major-update`/`needs-careful-review` labels.
 
-**Manifest-side gaps (need a pinned tag before Renovate can bump them):**
-`clusters/production/qbittorrent/deploy.yaml` `binhex/arch-qbittorrentvpn` has
-**no tag** (resolves to `latest`, invisible to Renovate);
-`clusters/production/prowlarr/deploy.yaml` `byparr:latest` is a moving tag;
-`infrastructure/external-dns/helmrelease.yaml` pins `version: "*"` (no fixed
-version to bump) and its `HelmRepository` is missing from the kustomization.
-`clusters/production/seerr` uses a fork branch-build tag
-(`michaelhthomas-oidc-<sha>`) that is only digest-trackable. Pin concrete
-tags/chart versions to bring these under Renovate.
+**Manifest-side pinning (all images now under Renovate).** Previously-invisible
+deps were pinned so Renovate can raise PRs:
+`clusters/production/qbittorrent/deploy.yaml` `binhex/arch-qbittorrentvpn` is now
+tagged `5.2.3-1-01` (tracked via docker datasource);
+`infrastructure/external-dns/helmrelease.yaml` pins chart `version: "1.21.1"`
+(HelmRepository → `https://kubernetes-sigs.github.io/external-dns/`, argus-owned
+in ns `internal-dns`). Two images ship no semver tags — `byparr:latest`
+(`clusters/production/prowlarr/deploy.yaml`, only `latest`/`main`/`nightly`
+exist) and the seerr fork build `zadki3l/seerr:michaelhthomas-oidc-<sha>`
+(`clusters/production/seerr/deploy.yaml`) — so a `packageRules` entry in
+`renovate.json5` sets `pinDigests: true` for both, making Renovate pin and track
+their digests (the only reproducible update path for a moving/branch tag).
 
 ---
 
@@ -396,7 +399,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 2026 (Consolidated media storage: merged 4 separate RWX PVCs (`movies`, `tvshows`, `animes`, `qbittorrent-downloads`) into a single `media` PVC (900Gi) to enable hardlinks between downloads and library folders. Updated all 5 app deployments (jellyfin, radarr, sonarr, qbittorrent, bazarr) to use `subPath` mounts. Migration script at `clusters/production/media/migrate.sh`. — Prior: Renovate is now self-hosted in GitHub Actions...)
+**Last Updated**: July 2026 (Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images `ghcr.io/thephaseless/byparr:latest` and `zadki3l/seerr:michaelhthomas-oidc-<sha>` — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs (`movies`, `tvshows`, `animes`, `qbittorrent-downloads`) into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts, migration script at `clusters/production/media/migrate.sh`.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

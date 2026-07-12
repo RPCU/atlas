@@ -140,6 +140,20 @@
       pinDigests: true,
     },
 
+    // Moving-tag / fork-build images that ship no semver tags:
+    //   - ghcr.io/thephaseless/byparr:latest (only latest/main/nightly exist)
+    //   - zadki3l/seerr:michaelhthomas-oidc-<sha> (fork branch build)
+    // Their human-readable tag never changes, so the ONLY way Renovate can
+    // raise a reproducible update PR is by pinning + tracking the digest.
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: [
+        "ghcr.io/thephaseless/byparr",
+        "zadki3l/seerr",
+      ],
+      pinDigests: true,
+    },
+
     // Pin all remaining container image digests so an updated tag is
     // reproducible.
     {
