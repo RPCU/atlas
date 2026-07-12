@@ -244,15 +244,44 @@ Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 
 ### Dependency Updates (Renovate)
 
-`renovate.json5` configures the Mend Renovate GitHub App: **no auto-merge**,
-PRs batched Monday early morning (`Europe/Paris`), Dependency Dashboard issue.
-Built-in managers: `flux` (HelmReleases in `clusters/**` + `infrastructure/**`),
-`helm-values`, `kustomize`. Custom regex managers mirror the argus ones:
-GitHub release-download / `raw.githubusercontent.com` URLs, `?ref=vX` kustomize
-bases, annotated bare `tag:` pins, and plain `image: repo:tag` in raw manifests
-(this is what tracks the app images). `major` updates get
-`major-update`/`needs-careful-review` labels. The unpinned images/charts above
-are invisible to Renovate until pinned.
+`renovate.json5` drives dependency-update PRs. Renovate runs **self-hosted in
+GitHub Actions** (`.github/workflows/renovate.yaml`, the
+`renovatebot/github-action`) — NOT via the Mend-hosted App — mirroring the argus
+setup. **No auto-merge**, PRs batched Monday early morning (`Europe/Paris`),
+Dependency Dashboard issue.
+
+**Runner + auth (self-hosted).** The workflow runs hourly (`cron: 0 * * * *`)
+plus `workflow_dispatch` (`dryRun`/`logLevel` inputs); Renovate's own `schedule`
+gates when branches/PRs are created, so hourly runs are cheap no-ops outside the
+window (a manual dispatch bypasses the window via `RENOVATE_FORCE`). It mints a
+short-lived token from the org **`rpcu-bot` GitHub App** (app_id `3164565`) via
+`actions/create-github-app-token@v1`, reusing the org-level `APP_ID` /
+`PRIVATE_KEY` secrets already granted to atlas (no repo-level secrets). The Mend
+`renovate` App (app_id `2740`) is installed org-wide; exclude atlas from it (or
+uninstall) so it does not double-run against this repo.
+
+**Managers.** Built-in: `flux` (HelmReleases in `clusters/**` +
+`infrastructure/**`), `helm-values`, `kustomize`, `github-actions`. Custom regex
+managers mirror the argus ones: GitHub release-download /
+`raw.githubusercontent.com` URLs, `?ref=vX` kustomize bases, annotated bare
+`tag:` pins, and plain `image: repo:tag` in raw manifests (this is what tracks
+the app images).
+
+**Grouping (packageRules):** the six per-app `oauth2-proxy` HelmReleases are
+grouped into one PR; the LinuxServer `*arr` images
+(`ghcr.io/linuxserver/*`) are grouped and `pinDigests: true` (their moving
+`-nightly`/`-develop`/`-development` tags are only trackable by digest). `major`
+updates get `major-update`/`needs-careful-review` labels.
+
+**Manifest-side gaps (need a pinned tag before Renovate can bump them):**
+`clusters/production/qbittorrent/deploy.yaml` `binhex/arch-qbittorrentvpn` has
+**no tag** (resolves to `latest`, invisible to Renovate);
+`clusters/production/prowlarr/deploy.yaml` `byparr:latest` is a moving tag;
+`infrastructure/external-dns/helmrelease.yaml` pins `version: "*"` (no fixed
+version to bump) and its `HelmRepository` is missing from the kustomization.
+`clusters/production/seerr` uses a fork branch-build tag
+(`michaelhthomas-oidc-<sha>`) that is only digest-trackable. Pin concrete
+tags/chart versions to bring these under Renovate.
 
 ---
 
@@ -364,7 +393,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 06, 2026 (Added bazarr subtitle-manager app adapted from ../bealv: media-ns deployment behind oauth2-proxy at bazarr.production.rpcu.lan, mounting shared RWX library PVCs, plus its Crossplane Oidc app.)
+**Last Updated**: July 2026 (Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Grouped the six oauth2-proxy releases + the LinuxServer *arr images (digest-pinned) in `renovate.json5`. See "Dependency Updates (Renovate)" in Section 2. — Prior: Added bazarr subtitle-manager app adapted from ../bealv: media-ns deployment behind oauth2-proxy at bazarr.production.rpcu.lan, mounting shared RWX library PVCs, plus its Crossplane Oidc app.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

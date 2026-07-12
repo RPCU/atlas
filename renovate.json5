@@ -120,7 +120,28 @@
       addLabels: ["major-update", "needs-careful-review"],
     },
 
-    // Pin all container image digests so an updated tag is reproducible.
+    // The six oauth2-proxy HelmReleases (one per *arr app) share the same
+    // chart version — group them into a single PR so they bump in lockstep.
+    {
+      groupName: "oauth2-proxy",
+      matchDatasources: ["helm"],
+      matchPackageNames: ["oauth2-proxy"],
+    },
+
+    // The LinuxServer *arr images (radarr/sonarr/bazarr/prowlarr) track moving
+    // release channels (-nightly/-develop/-development). Group them so the
+    // channel bumps land together, and pin digests so Renovate can still
+    // produce a reproducible update even when the human-readable tag doesn't
+    // change (a moving tag is only trackable by digest).
+    {
+      groupName: "linuxserver arr apps",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/^ghcr\\.io/linuxserver//"],
+      pinDigests: true,
+    },
+
+    // Pin all remaining container image digests so an updated tag is
+    // reproducible.
     {
       matchDatasources: ["docker"],
       pinDigests: false, // set true if you want immutable digest pinning
