@@ -22,9 +22,9 @@ spec:
         - name: jellyfin
           env:
             - name: MALLOC_TRIM_THRESHOLD_
-              value: "100000"
+              value: '100000'
             - name: DOTNET_SYSTEM_IO_DISABLESTATX
-              value: "1"
+              value: '1'
           resources:
             requests:
               memory: 1000Mi
@@ -64,14 +64,7 @@ spec:
             - name: cache
               mountPath: /cache
             - name: media
-              mountPath: /tvshows
-              subPath: tvshows
-            - name: media
-              mountPath: /animes
-              subPath: animes
-            - name: media
-              mountPath: /movies
-              subPath: movies
+              mountPath: /media
             - name: transcodes
               mountPath: /transcodes
             - name: configjson
