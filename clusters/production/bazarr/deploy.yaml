@@ -52,17 +52,7 @@ spec:
             - name: config
               mountPath: /config
             - name: media
-              mountPath: /movies
-              subPath: movies
-            - name: media
-              mountPath: /tvshows
-              subPath: tvshows
-            - name: media
-              mountPath: /animes
-              subPath: animes
-            - name: media
-              mountPath: /downloads
-              subPath: downloads
+              mountPath: /media
       volumes:
         - name: config
           persistentVolumeClaim:
