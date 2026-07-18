@@ -13,7 +13,7 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: external-dns
-        namespace: internal-dns
+        namespace: external-dns
   values:
     provider: cloudflare
     cloudflare:
