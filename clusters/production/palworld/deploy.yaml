@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: palworld
+  labels:
+    app: palworld
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: palworld
+  template:
+    metadata:
+      labels:
+        app: palworld
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: palworld
+          image: thijsvanloef/palworld-server-docker:latest
+          resources:
+            requests:
+              memory: 4Gi
+              cpu: 2
+            limits:
+              memory: 16Gi
+              cpu: 4
+          ports:
+            - name: game
+              containerPort: 8211
+              protocol: UDP
+            - name: query
+              containerPort: 27015
+              protocol: UDP
+            - name: rest-api
+              containerPort: 8212
+              protocol: TCP
+            - name: rcon
+              containerPort: 25575
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: palworld-config
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: ADMIN_PASSWORD
+            - name: SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: SERVER_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /palworld
+        - name: playit
+          image: ghcr.io/playit-cloud/playit-agent:latest
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: PLAYIT_SECRET_KEY
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: palworld-data

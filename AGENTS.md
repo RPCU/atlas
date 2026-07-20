@@ -147,6 +147,18 @@ the `atlas` Flux Kustomization reconciles):
   - OIDC (`oidc-jellysweep.yaml`, project `370001231784969038` "public", redirect `.../auth/oidc/callback`, role assertion enabled so the argus `groupsClaim` action surfaces the `groups` claim). `admin_group` = `public-admin`. `pushsecret-oidc.yaml` → Vault `secrets-production/jellysweep/oidc`.
   - `pvc.yaml` - `jellysweep-data` 2Gi RWO for the SQLite DB
 
+**Gaming Apps** (in namespace `gaming`; the namespace is declared in
+`palworld/namespace.yaml` with `kustomize.toolkit.fluxcd.io/prune: disabled`):
+
+- `palworld/` - Palworld dedicated game server, image `thijsvanloef/palworld-server-docker:latest`
+  - `namespace.yaml` - Namespace `gaming` (prune disabled)
+  - `deploy.yaml` - Deployment (1 replica, Recreate, fsGroup 1000, 4-8Gi RAM, 0.5-2 CPU). Env vars from ConfigMap (`palworld-config`) via `envFrom`, secrets (`ADMIN_PASSWORD`/`SERVER_PASSWORD`) from direct Secret `palworld-secrets`. Single volume mount `/palworld` from PVC `palworld-data`
+  - `service.yaml` - NodePort service: ports 8211 UDP (game), 27015 UDP (query), 8212 TCP (REST API), 25575 TCP (RCON)
+  - `httproute.yaml` - **Public**: `palworld.rpcu.io` on the `https-external` Gateway → backend `palworld:8212` (REST API only; game traffic is UDP via NodePort)
+  - `pvc.yaml` - `palworld-data` 25Gi RWO (default Cinder SC) for server files, saves, and backups
+  - `cm.yaml` - ConfigMap `palworld-config` (server settings: 16 players, multithreading enabled, daily backups, RCON enabled, game rate defaults)
+  - `secret.yaml` - Direct Kubernetes Secret `palworld-secrets` (`ADMIN_PASSWORD`, `SERVER_PASSWORD`) — **NOT via Vault/ESO**, managed manually. **Change default values before pushing!**
+
 ### infrastructure/ - Production-Specific Glue
 
 **cert-manager/** — NOT a cert-manager install (that comes from Sveltos).
@@ -241,6 +253,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 | jellystat      | 1.1.11                    | `clusters/production/jellystat/deploy.yaml`                                       |
 | jellysweep     | v0.15.0                   | `clusters/production/jellysweep/deploy.yaml`                                      |
 | cloudnative-pg | 0.29.0 (chart)            | `infrastructure/cnpg/helmrelease.yaml`                                            |
+| palworld       | latest                    | `clusters/production/palworld/deploy.yaml`                                        |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.
@@ -399,7 +412,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 2026 (Pinned byparr to `main` with digest on GHCR (was `latest`-only, Renovate tracks `main` tag via `pinDigests: true`). — Prior: Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts.)
+**Last Updated**: July 2026 (Added Palworld dedicated game server in new `gaming` namespace — NodePort for UDP game/query ports, HTTPRoute for REST API on `palworld.rpcu.io`, direct K8s Secret for passwords, 25Gi Cinder PVC. — Prior: Pinned byparr to `main` with digest on GHCR (was `latest`-only, Renovate tracks `main` tag via `pinDigests: true`). — Prior: Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)
