@@ -21,7 +21,12 @@
   ],
 
   timezone: "Europe/Paris",
-  schedule: ["* 0-6 * * 1"], // Monday early morning, batch the noise
+  // Renovate's natural-language schedule is far more robust than raw cron for
+  // hour-range matching. The workflow cron runs hourly (in UTC, often delayed);
+  // Renovate only opens branches/PRs when the run falls inside this window, and
+  // just extracts deps + exits on runs outside it. Run daily in the early
+  // morning so update PRs surface every day (Europe/Paris).
+  schedule: ["before 7am"], // every day, early morning
 
   // Production GitOps: a human reviews and merges every change.
   automerge: false,
