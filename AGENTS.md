@@ -243,17 +243,21 @@ KV-v2 mount `secrets-production`). Paths in use:
 
 | Component      | Version                   | Where                                                                             |
 | -------------- | ------------------------- | --------------------------------------------------------------------------------- |
-| oauth2-proxy   | 10.6.0 (chart)            | `clusters/production/{radarr,prowlarr,qbittorrent}/oauth2-proxy/helmrelease.yaml` |
+| oauth2-proxy   | 10.7.0 (chart)            | `clusters/production/{radarr,prowlarr,qbittorrent,sonarr,bazarr,jellystat}/oauth2-proxy/helmrelease.yaml` |
 | jellyfin       | 10.11.11                  | `clusters/production/jellyfin/deploy.yaml`                                        |
-| radarr         | 6.2.1-nightly             | `clusters/production/radarr/deploy.yaml`                                          |
-| prowlarr       | 2.4.0-nightly             | `clusters/production/prowlarr/deploy.yaml`                                        |
+| radarr         | 6.4.1-nightly             | `clusters/production/radarr/deploy.yaml`                                          |
+| sonarr         | 4.0.19-develop            | `clusters/production/sonarr/deploy.yaml`                                          |
+| prowlarr       | 2.6.1-nightly             | `clusters/production/prowlarr/deploy.yaml`                                        |
+| bazarr         | 1.6.1-development         | `clusters/production/bazarr/deploy.yaml`                                          |
 | byparr         | main (digest-pinned)      | `clusters/production/prowlarr/deploy.yaml`                                        |
+| seerr          | michaelhthomas-oidc-<sha> (digest-pinned) | `clusters/production/seerr/deploy.yaml`                          |
 | qbittorrentvpn | 5.2.3-1-01                | `clusters/production/qbittorrent/deploy.yaml`                                     |
 | external-dns   | 1.21.1 (chart)            | `infrastructure/external-dns/helmrelease.yaml`                                    |
 | jellystat      | 1.1.11                    | `clusters/production/jellystat/deploy.yaml`                                       |
 | jellysweep     | v0.15.0                   | `clusters/production/jellysweep/deploy.yaml`                                      |
 | cloudnative-pg | 0.29.0 (chart)            | `infrastructure/cnpg/helmrelease.yaml`                                            |
-| palworld       | latest                    | `clusters/production/palworld/deploy.yaml`                                        |
+| palworld       | v2.7.1                    | `clusters/production/palworld/deploy.yaml`                                        |
+| playit-agent   | 1.0.8                     | `clusters/production/palworld/deploy.yaml`                                        |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.
@@ -412,7 +416,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: July 2026 (Scaled the jellystat CNPG `Cluster` from 1 to 3 instances — 1 primary + 2 streaming replicas, each with its own 10Gi Cinder PVC. — Prior: Added Palworld dedicated game server in new `gaming` namespace — NodePort for UDP game/query ports, HTTPRoute for REST API on `palworld.rpcu.io`, direct K8s Secret for passwords, 25Gi Cinder PVC. — Prior: Pinned byparr to `main` with digest on GHCR (was `latest`-only, Renovate tracks `main` tag via `pinDigests: true`). — Prior: Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts.)
+**Last Updated**: July 2026 (Renovate coverage audit: the only untracked dependency was `ghcr.io/playit-cloud/playit-agent:latest` (moving `latest` tag, unpinnable) — pinned it to the current stable semver `1.0.8` so the docker datasource / regex manager #4 tracks it like every other image. Also refreshed the Version Pins table to match live manifests (oauth2-proxy 10.7.0, radarr 6.4.1, sonarr 4.0.19, prowlarr 2.6.1, bazarr 1.6.1, palworld v2.7.1; added sonarr/bazarr/seerr/playit-agent rows). Verified: all `image:` tags, the 6 oauth2-proxy + external-dns + cnpg HelmReleases, and byparr/seerr digest pins are all covered; crossplane/cnpg/cert-manager/kgateway Flux Kustomizations source the argus GitRepository so have no versioned artifact to pin. — Prior: Scaled the jellystat CNPG `Cluster` from 1 to 3 instances — 1 primary + 2 streaming replicas, each with its own 10Gi Cinder PVC. — Prior: Added Palworld dedicated game server in new `gaming` namespace — NodePort for UDP game/query ports, HTTPRoute for REST API on `palworld.rpcu.io`, direct K8s Secret for passwords, 25Gi Cinder PVC. — Prior: Pinned byparr to `main` with digest on GHCR (was `latest`-only, Renovate tracks `main` tag via `pinDigests: true`). — Prior: Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts.)
 **Repository**: <https://github.com/RPCU/atlas.git>
 **Main Branch**: main
 **Cluster**: production (CAPI workload cluster, managed from argus mgmt)

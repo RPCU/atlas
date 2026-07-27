@@ -20,7 +20,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: palworld
-          image: thijsvanloef/palworld-server-docker:latest
+          image: thijsvanloef/palworld-server-docker:v2.7.1
           resources:
             requests:
               memory: 4Gi
@@ -59,7 +59,7 @@ spec:
             - name: data
               mountPath: /palworld
         - name: playit
-          image: ghcr.io/playit-cloud/playit-agent:latest
+          image: ghcr.io/playit-cloud/playit-agent:1.0.8
           env:
             - name: SECRET_KEY
               valueFrom:
