@@ -15,5 +15,9 @@ spec:
       port: 25575
       targetPort: rcon
       protocol: TCP
+    - name: metrics
+      port: 9877
+      targetPort: metrics
+      protocol: TCP
   selector:
     app: palworld

@@ -9,3 +9,4 @@ resources:
   - pvc.yaml
   - cm.yaml
   - secrets.yaml
+  - servicemonitor.yaml

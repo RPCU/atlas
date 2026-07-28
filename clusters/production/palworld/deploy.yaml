@@ -83,6 +83,36 @@ spec:
                 secretKeyRef:
                   name: palworld-secrets
                   key: PLAYIT_SECRET_KEY
+        - name: exporter
+          image: docker.io/bostrt/palworld-exporter:v1.3.1
+          ports:
+            - name: metrics
+              containerPort: 9877
+              protocol: TCP
+          env:
+            - name: RCON_HOST
+              value: "127.0.0.1"
+            - name: RCON_PORT
+              value: "25575"
+            - name: RCON_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: ADMIN_PASSWORD
+            - name: SAVE_DIRECTORY
+              value: "/palworld"
+            - name: LISTEN_PORT
+              value: "9877"
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 10m
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: /palworld
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
