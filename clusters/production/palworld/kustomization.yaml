@@ -8,3 +8,4 @@ resources:
   - httproute.yaml
   - pvc.yaml
   - cm.yaml
+  - secrets.yaml
