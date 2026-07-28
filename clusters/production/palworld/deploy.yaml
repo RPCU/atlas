@@ -16,11 +16,23 @@ spec:
       labels:
         app: palworld
     spec:
+      terminationGracePeriodSeconds: 330
       securityContext:
         fsGroup: 1000
       containers:
         - name: palworld
           image: thijsvanloef/palworld-server-docker:v2.7.1
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - >-
+                    rest-cli announce '{"message": "Server is restarting in 5 minutes. Please find a safe spot."}' &&
+                    sleep 300 &&
+                    rest-cli save &&
+                    rest-cli shutdown '{"waittime": 10, "message": "Server is restarting now."}'
           resources:
             requests:
               memory: 4Gi
