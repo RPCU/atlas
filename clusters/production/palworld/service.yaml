@@ -16,7 +16,7 @@ spec:
       targetPort: rcon
       protocol: TCP
     - name: metrics
-      port: 9877
+      port: 18212
       targetPort: metrics
       protocol: TCP
   selector:

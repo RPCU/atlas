@@ -25,6 +25,10 @@ data:
   RCON_ENABLED: "true"
   RCON_PORT: "25575"
 
+  # Required by the palworld-exporter game-data collector
+  # (pal/guild/character metrics come from /v1/api/game-data).
+  ENABLE_GAMEDATA_API: "true"
+
   BACKUP_ENABLED: "true"
   DELETE_OLD_BACKUPS: "false"
   OLD_BACKUP_DAYS: "30"
