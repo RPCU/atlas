@@ -84,7 +84,7 @@ spec:
                   name: palworld-secrets
                   key: PLAYIT_SECRET_KEY
         - name: exporter
-          image: docker.io/banhcanh/palworld-exporter:v0.0.3
+          image: docker.io/banhcanh/palworld-exporter:v0.0.4
           ports:
             - name: metrics
               containerPort: 18212
@@ -93,18 +93,18 @@ spec:
             # Scrapes the REST API (enabled by default in the server image,
             # REST_API_PORT=8212 in palworld-config), not RCON.
             - name: SCRAPE_URI
-              value: "http://127.0.0.1:8212/v1/api"
+              value: 'http://127.0.0.1:8212/v1/api'
             - name: HTTP_USER
-              value: "admin"
+              value: 'admin'
             - name: HTTP_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: palworld-secrets
                   key: ADMIN_PASSWORD
             - name: SAVE_DIRECTORY
-              value: "/palworld"
+              value: '/palworld'
             - name: LISTEN_ADDRESS
-              value: ":18212"
+              value: ':18212'
           resources:
             requests:
               memory: 64Mi
