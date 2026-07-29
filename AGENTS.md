@@ -260,7 +260,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 | cloudnative-pg | 0.29.0 (chart)            | `infrastructure/cnpg/helmrelease.yaml`                                            |
 | palworld       | v2.7.1                    | `clusters/production/palworld/deploy.yaml`                                        |
 | playit-agent   | 1.0.8                     | `clusters/production/palworld/deploy.yaml`                                        |
-| palworld-exporter | v0.0.2 (Banh-Canh/palworld-exporter-go) | `clusters/production/palworld/deploy.yaml`                       |
+| palworld-exporter | v0.0.3 (Banh-Canh/palworld-exporter-go) | `clusters/production/palworld/deploy.yaml` |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.

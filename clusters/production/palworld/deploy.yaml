@@ -84,7 +84,7 @@ spec:
                   name: palworld-secrets
                   key: PLAYIT_SECRET_KEY
         - name: exporter
-          image: docker.io/banhcanh/palworld-exporter:v0.0.2
+          image: docker.io/banhcanh/palworld-exporter:v0.0.3
           ports:
             - name: metrics
               containerPort: 18212
