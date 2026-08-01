@@ -31,10 +31,10 @@ spec:
             privileged: true
           resources:
             requests:
-              memory: 500Mi
-              cpu: 100m
+              memory: 2Gi
+              cpu: 200m
             limits:
-              memory: 1500Mi
+              memory: 3Gi
           ports:
             - name: qbittorrent
               containerPort: 8080
