@@ -31,7 +31,7 @@ spec:
             # never be throttled/OOM-killed. Requests only, sized to the
             # observed steady-state baseline (~500Mi RSS, low idle CPU).
             requests:
-              memory: 750Mi
+              memory: 2Gi
               cpu: 250m
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
