@@ -21,11 +21,10 @@ spec:
           image: ghcr.io/linuxserver/bazarr:1.6.1-development
           resources:
             requests:
-              memory: 800Mi
-              cpu: 100m
+              memory: 250Mi
+              cpu: 50m
             limits:
-              memory: 800Mi
-              cpu: 1
+              memory: 600Mi
           ports:
             - name: bazarr
               containerPort: 6767

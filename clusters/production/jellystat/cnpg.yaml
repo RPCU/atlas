@@ -15,3 +15,12 @@ spec:
   storage:
     size: 10Gi
     # RWO Cinder default StorageClass (argus-provided)
+  # No resources were set before this; each instance was fully unbounded on
+  # memory-constrained nodes. Observed usage per instance over an 8h sample:
+  # ~59-124Mi RSS, ~6-13m CPU.
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi

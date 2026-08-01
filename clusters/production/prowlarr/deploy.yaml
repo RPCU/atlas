@@ -21,11 +21,10 @@ spec:
           image: ghcr.io/linuxserver/prowlarr:2.6.1-nightly
           resources:
             requests:
-              memory: 800Mi
-              cpu: 100m
+              memory: 200Mi
+              cpu: 50m
             limits:
-              memory: 800Mi
-              cpu: 1
+              memory: 500Mi
           ports:
             - name: prowlarr
               containerPort: 9696
@@ -83,6 +82,10 @@ spec:
             requests:
               memory: 200Mi
               cpu: 50m
+            limits:
+              # Headless-browser workload; observed up to ~464Mi in an 8h
+              # sample so limit carries generous headroom over that.
+              memory: 900Mi
       volumes:
         - name: config
           persistentVolumeClaim:

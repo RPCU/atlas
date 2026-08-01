@@ -48,11 +48,10 @@ spec:
               exec npm start
           resources:
             requests:
-              memory: 200Mi
-              cpu: 100m
+              memory: 300Mi
+              cpu: 50m
             limits:
-              memory: 500Mi
-              cpu: 500m
+              memory: 600Mi
           ports:
             - name: seerr
               containerPort: 5055

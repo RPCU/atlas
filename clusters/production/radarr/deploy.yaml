@@ -21,11 +21,10 @@ spec:
           image: ghcr.io/linuxserver/radarr:6.4.1-nightly
           resources:
             requests:
-              memory: 800Mi
-              cpu: 100m
+              memory: 200Mi
+              cpu: 50m
             limits:
-              memory: 800Mi
-              cpu: 1
+              memory: 500Mi
           ports:
             - name: radarr
               containerPort: 7878

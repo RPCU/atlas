@@ -34,12 +34,13 @@ spec:
                     rest-cli save &&
                     rest-cli shutdown '{"waittime": 10, "message": "Server is restarting now."}'
           resources:
+            # Important workload (live game server) - no limits: an OOM-kill
+            # or CPU throttle drops every connected player. Requests sized to
+            # the observed steady-state baseline (~1.4-1.9Gi RSS, ~450m-860m
+            # CPU with players on) rather than the old 4Gi/2-core placeholder.
             requests:
-              memory: 4Gi
-              cpu: 2
-            limits:
-              memory: 12Gi
-              cpu: 4
+              memory: 2Gi
+              cpu: 750m
           ports:
             - name: game
               containerPort: 8211
@@ -77,6 +78,12 @@ spec:
               mountPath: /palworld
         - name: playit
           image: ghcr.io/playit-cloud/playit-agent:1.0.10
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 10m
+            limits:
+              memory: 128Mi
           env:
             - name: SECRET_KEY
               valueFrom:

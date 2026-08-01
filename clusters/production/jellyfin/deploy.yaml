@@ -26,13 +26,15 @@ spec:
             - name: DOTNET_SYSTEM_IO_DISABLESTATX
               value: '1'
           resources:
+            # Important workload (primary media server) - no limits: transcode
+            # bursts observed up to ~3.3 CPU cores in an 8h sample and should
+            # never be throttled/OOM-killed. Requests only, sized to the
+            # observed steady-state baseline (~500Mi RSS, low idle CPU).
             requests:
-              memory: 1000Mi
-              cpu: 100m
-            limits:
+              memory: 750Mi
+              cpu: 250m
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
-              memory: 2000Mi
           image: docker.io/jellyfin/jellyfin:10.11.11
           ports:
             - containerPort: 8096

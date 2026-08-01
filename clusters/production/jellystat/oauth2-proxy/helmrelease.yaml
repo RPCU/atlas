@@ -44,11 +44,10 @@ spec:
             key: cookie-secret
     resources:
       limits:
-        cpu: 100m
-        memory: 300Mi
+        memory: 64Mi
       requests:
-        cpu: 100m
-        memory: 300Mi
+        cpu: 10m
+        memory: 32Mi
     proxyVarsAsSecrets: false
     replicaCount: 1
     podDisruptionBudget:
