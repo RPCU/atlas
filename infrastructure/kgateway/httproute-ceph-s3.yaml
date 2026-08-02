@@ -49,7 +49,7 @@ spec:
   validation:
     caCertificateRefs:
       - group: ""
-        kind: ConfigMap
+        kind: Secret
         name: rpcu-bundle
     hostname: s3.rpcu.vpn
 ---
