@@ -1,3 +1,4 @@
 namespace: kgateway-system
 resources:
   - gateway.yaml
+  - httproute-ceph-s3.yaml

@@ -1,0 +1,67 @@
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: s3-rpcu-vpn
+  namespace: kgateway-system
+spec:
+  type: Static
+  static:
+    hosts:
+      - host: s3.rpcu.vpn
+        port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-ceph-s3-external
+  namespace: kgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "s3.rpcu.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: s3-rpcu-vpn
+          kind: Backend
+          group: gateway.kgateway.dev
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: s3.rpcu.vpn
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: backendtls-ceph-s3
+  namespace: kgateway-system
+spec:
+  targetRefs:
+    - group: gateway.kgateway.dev
+      kind: Backend
+      name: s3-rpcu-vpn
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: rpcu-bundle
+    hostname: s3.rpcu.vpn
+---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: traffictolicy-ceph-s3
+  namespace: kgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: httproute-ceph-s3-external
+  timeouts:
+    streamIdle: 600s
