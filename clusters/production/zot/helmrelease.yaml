@@ -11,13 +11,10 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: project-zot
-  # Wait on the secrets/configmap that the pod mounts so we don't churn on a
-  # missing S3 credential or htpasswd file.
-  dependsOn:
-    - name: zot-secret
-    - name: zot-s3
-    - name: zot-oidc-credentials
-    - name: trust-manager
+  # NOTE: dependsOn is not used — Flux v2 HelmRelease can only depend on other
+  # HelmReleases, not ExternalSecrets or Kustomizations. The HelmRelease retries
+  # on its interval; missing secrets cause pod startup failures that self-heal
+  # once the ExternalSecrets sync.
   values:
     image:
       repository: ghcr.io/project-zot/zot
