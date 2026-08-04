@@ -1,0 +1,8 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: registry
+  annotations:
+    # Keep the namespace (and its cache PVC) even if the zot dir is removed from
+    # Git, mirroring the media namespace convention.
+    kustomize.toolkit.fluxcd.io/prune: disabled

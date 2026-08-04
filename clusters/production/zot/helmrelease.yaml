@@ -1,0 +1,83 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: zot
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: zot
+      version: 0.1.122
+      sourceRef:
+        kind: HelmRepository
+        name: project-zot
+  # Wait on the secrets/configmap that the pod mounts so we don't churn on a
+  # missing S3 credential or htpasswd file.
+  dependsOn:
+    - name: zot-secret
+    - name: zot-s3
+    - name: zot-oidc-credentials
+    - name: trust-manager
+  values:
+    image:
+      repository: ghcr.io/project-zot/zot
+      # Full-featured image (ui/search/metrics extensions used in config.json).
+      tag: v2.1.19
+    replicaCount: 1
+    strategy:
+      type: Recreate
+    service:
+      type: ClusterIP
+      port: 5000
+    # Mount clusters/production/zot/configmap.yaml (ConfigMap "zot-config") at
+    # /etc/zot/config.json.
+    mountConfig: true
+    # Mount the "zot-secret" ExternalSecret (htpasswd) at /secret.
+    mountSecret: true
+    # Mount the templated OIDC credentials file on a separate path.
+    externalSecrets:
+      - secretName: zot-oidc-credentials
+        mountPath: /secret-oidc
+    # No persistent volume: blobs live in Ceph S3 and the dedup cache is remote
+    # (Redis/Dragonfly). rootDirectory (/var/lib/registry) is transient scratch
+    # only, so back it with an emptyDir.
+    persistence: false
+    extraVolumes:
+      - name: registry
+        emptyDir: {}
+      - name: rpcu-ca
+        configMap:
+          name: rpcu-ca-trust
+    extraVolumeMounts:
+      - name: registry
+        mountPath: /var/lib/registry
+      - name: rpcu-ca
+        mountPath: /etc/zot/certs
+        readOnly: true
+    # S3 credentials for the Ceph object store, via the default AWS credential
+    # chain (distribution S3 driver).
+    env:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: zot-s3
+            key: AWS_ACCESS_KEY_ID
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: zot-s3
+            key: AWS_SECRET_ACCESS_KEY
+      - name: SSL_CERT_FILE
+        value: /etc/zot/certs/ca.crt
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+    # htpasswd auth is enabled but anonymous read is allowed, so probes need a
+    # credential. This is base64("probe:probe"); create a matching probe user in
+    # the Vault htpasswd, or rely on anonymous read (the /v2/ ping is allowed for
+    # anonymous). Left commented — anonymous read covers the default probes.
+    # authHeader: "cHJvYmU6cHJvYmU="

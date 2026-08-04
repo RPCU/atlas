@@ -1,0 +1,35 @@
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: zot
+spec:
+  forProvider:
+    # zot logs users in natively via OIDC (web UI) and reads the "groups" claim
+    # (populated by the argus-owned groupsClaim action from the user's role
+    # grants) to match its accessControl group policies (the "admin" group gets
+    # full RW). Role assertion must be enabled for the claim to appear.
+    accessTokenRoleAssertion: true
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: true
+    idTokenUserinfoAssertion: true
+    name: zot
+    orgId: "369994019545117645"
+    postLogoutRedirectUris:
+      - "*"
+    projectId: "370001231734928333" # administration
+    redirectUris:
+      - https://zot.rpcu.io/zot/auth/callback/oidc
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: zot-oidc
+    namespace: registry

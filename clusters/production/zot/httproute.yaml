@@ -1,0 +1,25 @@
+# Public route: zot.rpcu.io on the https-external Gateway (Cloudflare DNS +
+# Let's Encrypt wildcard). Public so docker/podman can pull from anywhere with a
+# publicly-trusted TLS cert. Generous timeouts + no body-size cap matter for
+# large layer pushes (the Gateway sets a 128Mi per-connection buffer).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: zot
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+  hostnames:
+    - "zot.rpcu.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: "600s"
+        backendRequest: "600s"
+      backendRefs:
+        - name: zot
+          port: 5000

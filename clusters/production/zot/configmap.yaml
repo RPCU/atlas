@@ -1,0 +1,117 @@
+# zot registry configuration, mounted at /etc/zot/config.json (helm mountConfig).
+#
+# The ConfigMap MUST be named "<release>-config" for the chart's mountConfig to
+# pick it up — the HelmRelease is named "zot", so the chart mounts "zot-config".
+#
+# Storage: blobs live in Ceph S3 (argus openstack Rook CephObjectStore
+# "rpcu-store", reached over the internal VPN at s3.rpcu.vpn). The dedup metadata
+# cache is a REMOTE Redis cache backed by the Dragonfly instance (dragonfly.yaml,
+# Service zot-dragonfly:6379) — so zot is fully stateless (no local cache PVC;
+# rootDirectory is an emptyDir used only for transient scratch). The Dragonfly
+# operator is delivered by the argus Sveltos "dragonfly" add-on. S3 credentials +
+# bucket come from env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), injected
+# from the ESO secret zot-s3.
+#
+# Auth: two paths, both active.
+#   - htpasswd  -> for docker/podman login (CLI push/pull, CI). File mounted at
+#     /secret/htpasswd from the ESO secret zot-htpasswd (helm mountSecret).
+#   - Zitadel OIDC social login -> for the web UI. externalUrl must be the public
+#     URL so the OAuth2 redirect comes back correctly through the Gateway.
+#     Registered redirect URI in Zitadel: https://zot.rpcu.io/zot/auth/callback/oidc
+#     (see clusters/production/crossplane/oidc-zot.yaml). clientid/clientsecret
+#     are read from the mounted credentials file
+#     /secret-oidc/oidc-credentials.json (templated from the zot-oidc connection
+#     secret written by Crossplane).
+#
+# Authorization: the Zitadel "admin" group (surfaced via the groups claim, which
+# requires role assertion on the Oidc app) gets full RW on every repo; any other
+# authenticated user gets read + create/update (push); anonymous users get
+# read-only pulls. The htpasswd "admin" user is an explicit adminPolicy user.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zot-config
+data:
+  config.json: |-
+    {
+      "distSpecVersion": "1.1.0",
+      "storage": {
+        "rootDirectory": "/var/lib/registry",
+        "dedupe": true,
+        "remoteCache": true,
+        "gc": true,
+        "gcDelay": "1h",
+        "gcInterval": "24h",
+        "storageDriver": {
+          "name": "s3",
+          "rootdirectory": "/zot",
+          "region": "us-east-1",
+          "regionendpoint": "https://s3.rpcu.vpn",
+          "bucket": "zot",
+          "secure": true,
+          "skipverify": false,
+          "forcepathstyle": true
+        },
+        "cacheDriver": {
+          "name": "redis",
+          "url": "redis://zot-dragonfly:6379",
+          "keyprefix": "zot"
+        }
+      },
+      "http": {
+        "address": "0.0.0.0",
+        "port": "5000",
+        "externalUrl": "https://zot.rpcu.io",
+        "auth": {
+          "htpasswd": {
+            "path": "/secret/htpasswd"
+          },
+          "openid": {
+            "providers": {
+              "oidc": {
+                "name": "ZITADEL",
+                "issuer": "https://rpcu-gabeck.eu1.zitadel.cloud",
+                "credentialsFile": "/secret-oidc/oidc-credentials.json",
+                "keypath": "",
+                "scopes": ["openid", "profile", "email", "groups"]
+              }
+            }
+          }
+        },
+        "accessControl": {
+          "repositories": {
+            "**": {
+              "policies": [
+                {
+                  "groups": ["admin"],
+                  "actions": ["read", "create", "update", "delete"]
+                }
+              ],
+              "defaultPolicy": ["read", "create", "update"],
+              "anonymousPolicy": ["read"]
+            }
+          },
+          "adminPolicy": {
+            "users": ["admin"],
+            "actions": ["read", "create", "update", "delete"]
+          }
+        }
+      },
+      "log": {
+        "level": "info"
+      },
+      "extensions": {
+        "ui": {
+          "enable": true
+        },
+        "search": {
+          "enable": true
+        },
+        "metrics": {
+          "enable": true,
+          "prometheus": {
+            "path": "/metrics"
+          }
+        }
+      }
+    }

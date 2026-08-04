@@ -20,3 +20,4 @@ resources:
   - oidc-bazarr.yaml
   - oidc-jellystat.yaml
   - oidc-jellysweep.yaml
+  - oidc-zot.yaml

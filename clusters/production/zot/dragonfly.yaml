@@ -1,0 +1,23 @@
+# Dragonfly (Redis-compatible) instance backing zot's remote dedup cache.
+# The DragonflyDB operator that reconciles this CR is installed on the production
+# cluster by the argus Sveltos "dragonfly" add-on (gated by the
+# sveltos.argus.rpcu.io/dragonfly: enabled label on the production Cluster CR).
+#
+# Creates a Service "zot-dragonfly" on 6379. zot uses it as its remoteCache
+# (config.json cacheDriver.name: redis, url redis://zot-dragonfly:6379), which
+# lets the dedup metadata live off-box so no local cache PVC is required (blobs
+# already live in Ceph S3). Single replica is fine for a single-replica zot; a
+# Redis cache is authoritative-optional (rebuildable from the S3 store).
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: zot-dragonfly
+spec:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
