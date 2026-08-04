@@ -15,7 +15,7 @@ spec:
     image:
       repository: ghcr.io/project-zot/zot
       # Full-featured image (ui/search/metrics extensions used in config.json).
-      tag: v2.1.19
+      tag: v2.1.20
     replicaCount: 1
     strategy:
       type: Recreate
