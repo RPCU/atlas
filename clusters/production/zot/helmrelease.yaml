@@ -11,10 +11,6 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: project-zot
-  # NOTE: dependsOn is not used — Flux v2 HelmRelease can only depend on other
-  # HelmReleases, not ExternalSecrets or Kustomizations. The HelmRelease retries
-  # on its interval; missing secrets cause pod startup failures that self-heal
-  # once the ExternalSecrets sync.
   values:
     image:
       repository: ghcr.io/project-zot/zot
@@ -26,15 +22,10 @@ spec:
     service:
       type: ClusterIP
       port: 5000
-    # Mount clusters/production/zot/configmap.yaml (ConfigMap "zot-config") at
-    # /etc/zot/config.json.
+    # Inline the zot config via the chart's configFiles value. The chart creates
+    # the <release>-config ConfigMap and mounts it at /etc/zot/config.json with
+    # the correct "serve" subcommand args.
     mountConfig: true
-    # Tell zot to load the mounted config (mountConfig only mounts the file,
-    # the chart does not pass --config automatically).
-    extraArgs:
-      - "--config"
-      - "/etc/zot/config.json"
-    # Mount the "zot-secret" ExternalSecret (htpasswd) at /secret.
     mountSecret: true
     # Mount the templated OIDC credentials file on a separate path.
     externalSecrets:
@@ -74,8 +65,90 @@ spec:
       limits:
         cpu: "1"
         memory: 512Mi
-    # htpasswd auth is enabled but anonymous read is allowed, so probes need a
-    # credential. This is base64("probe:probe"); create a matching probe user in
-    # the Vault htpasswd, or rely on anonymous read (the /v2/ ping is allowed for
-    # anonymous). Left commented — anonymous read covers the default probes.
-    # authHeader: "cHJvYmU6cHJvYmU="
+    # zot config: S3 storage, Redis dedup cache, Zitadel OIDC + htpasswd auth,
+    # UI/search/metrics extensions. The htpasswd file is mounted at /secret from
+    # the zot-secret ExternalSecret. OIDC credentials from /secret-oidc.
+    configFiles:
+      config.json: |-
+        {
+          "distSpecVersion": "1.1.0",
+          "storage": {
+            "rootDirectory": "/var/lib/registry",
+            "dedupe": true,
+            "remoteCache": true,
+            "gc": true,
+            "gcDelay": "1h",
+            "gcInterval": "24h",
+            "storageDriver": {
+              "name": "s3",
+              "rootdirectory": "/zot",
+              "region": "us-east-1",
+              "regionendpoint": "https://s3.rpcu.vpn",
+              "bucket": "zot",
+              "secure": true,
+              "skipverify": false,
+              "forcepathstyle": true
+            },
+            "cacheDriver": {
+              "name": "redis",
+              "url": "redis://zot-dragonfly:6379",
+              "keyprefix": "zot"
+            }
+          },
+          "http": {
+            "address": "0.0.0.0",
+            "port": "5000",
+            "externalUrl": "https://zot.rpcu.io",
+            "auth": {
+              "htpasswd": {
+                "path": "/secret/htpasswd"
+              },
+              "openid": {
+                "providers": {
+                  "oidc": {
+                    "name": "ZITADEL",
+                    "issuer": "https://rpcu-gabeck.eu1.zitadel.cloud",
+                    "credentialsFile": "/secret-oidc/oidc-credentials.json",
+                    "keypath": "",
+                    "scopes": ["openid", "profile", "email", "groups"]
+                  }
+                }
+              }
+            },
+            "accessControl": {
+              "repositories": {
+                "**": {
+                  "policies": [
+                    {
+                      "groups": ["admin"],
+                      "actions": ["read", "create", "update", "delete"]
+                    }
+                  ],
+                  "defaultPolicy": ["read", "create", "update"],
+                  "anonymousPolicy": ["read"]
+                }
+              },
+              "adminPolicy": {
+                "users": ["admin"],
+                "actions": ["read", "create", "update", "delete"]
+              }
+            }
+          },
+          "log": {
+            "level": "info"
+          },
+          "extensions": {
+            "ui": {
+              "enable": true
+            },
+            "search": {
+              "enable": true
+            },
+            "metrics": {
+              "enable": true,
+              "prometheus": {
+                "path": "/metrics"
+              }
+            }
+          }
+        }

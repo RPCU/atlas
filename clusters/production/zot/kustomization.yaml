@@ -4,7 +4,6 @@ namespace: registry
 resources:
   - namespace.yaml
   - helmrepo.yaml
-  - configmap.yaml
   - secrets.yaml
   - pushsecret-oidc.yaml
   - dragonfly.yaml
