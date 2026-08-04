@@ -40,14 +40,10 @@ spec:
     # only, so back it with an emptyDir.
     persistence: false
     extraVolumes:
-      - name: registry
-        emptyDir: {}
       - name: rpcu-ca
         configMap:
           name: rpcu-ca-trust
     extraVolumeMounts:
-      - name: registry
-        mountPath: /var/lib/registry
       - name: rpcu-ca
         mountPath: /etc/zot/certs
         readOnly: true
