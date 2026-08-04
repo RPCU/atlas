@@ -29,8 +29,9 @@ spec:
     # Mount clusters/production/zot/configmap.yaml (ConfigMap "zot-config") at
     # /etc/zot/config.json.
     mountConfig: true
-    # The chart mounts the config but doesn't pass --config to the binary.
-    args:
+    # Tell zot to load the mounted config (mountConfig only mounts the file,
+    # the chart does not pass --config automatically).
+    extraArgs:
       - "--config"
       - "/etc/zot/config.json"
     # Mount the "zot-secret" ExternalSecret (htpasswd) at /secret.
