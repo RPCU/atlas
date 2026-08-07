@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kamaji
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/kamaji
+  prune: true
+  timeout: 5m
+  patches:
+    # Only override what differs from the argus mgmt base. Helm merges the base
+    # `kamaji-values` ConfigMap (valuesFrom) first, then this inline `values`
+    # block on top — so this sets production's clusterDomain and inherits
+    # everything else from the base (DRY).
+    - target:
+        kind: HelmRelease
+        name: kamaji
+      patch: |
+        - op: add
+          path: /spec/values
+          value:
+            kamaji-etcd:
+              clusterDomain: production.local
