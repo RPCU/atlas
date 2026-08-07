@@ -9,6 +9,7 @@ resources:
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml
   - kamaji.yaml
+  - kamaji-tenants
   - media
   - jellyfin
   - radarr

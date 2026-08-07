@@ -1,0 +1,10 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kamaji-tenants
+  annotations:
+    # Where the Kamaji externalClusterReference deploys tenant control plane
+    # pods (see argus openstack-kamaji-external ClusterClass, deploymentNamespace:
+    # kamaji-tenants). Keep it even if this dir is removed from Git so running
+    # tenant control planes are not orphaned.
+    kustomize.toolkit.fluxcd.io/prune: disabled

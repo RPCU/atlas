@@ -4,7 +4,7 @@ metadata:
   name: jellystat-postgres
 spec:
   instances: 1
-  enablePodDisruptionBudget: false
+  enablePDB: false
   # jellystat expects the DB name "jfstat" (POSTGRES_DB default) with the
   # bootstrap user as owner. Creds come from the ESO-managed jellystat-db secret.
   bootstrap:
