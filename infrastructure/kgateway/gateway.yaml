@@ -39,6 +39,33 @@ spec:
         mode: Terminate
         certificateRefs:
           - name: rpcu-io-wildcard-tls
+    # Kamaji tenant control plane API servers — TLS Passthrough for SNI routing.
+    # Same pattern as the internal kcp listener on the "https" gateway, but on
+    # the public *.kcp.rpcu.io domain. Each tenant cluster gets its own TLSRoute
+    # (created by the Kamaji controller) with hostname <tenant>.kcp.rpcu.io.
+    # Port 6443 (not 443) because Kamaji always advertises networkProfile.port
+    # (6443) in kubeconfigs and has no advertised-port override.
+    - protocol: TLS
+      port: 6443
+      name: kcp
+      hostname: "*.kcp.rpcu.io"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Passthrough
+    # Kamaji konnectivity server — port 8132 is HARDCODED by Kamaji. Every
+    # gateway in the TCP's parentRefs must carry this listener or the worker-node
+    # agents can't establish the tunnel (breaks logs/exec/port-forward/metrics).
+    - protocol: TLS
+      port: 8132
+      name: konnectivity-server
+      hostname: "*.kcp.rpcu.io"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Passthrough
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
