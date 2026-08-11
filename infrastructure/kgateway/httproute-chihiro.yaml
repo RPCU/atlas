@@ -47,4 +47,5 @@ spec:
       - group: ""
         kind: Secret
         name: root-mgmt-bundle
+        namespace: cert-manager
     hostname: chihiro.mgmt.rpcu.lan
