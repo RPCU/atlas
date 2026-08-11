@@ -46,6 +46,5 @@ spec:
     caCertificateRefs:
       - group: ""
         kind: Secret
-        name: root-mgmt-bundle
-        namespace: cert-manager
+        name: rpcu-ca-trust
     hostname: chihiro.mgmt.rpcu.lan
