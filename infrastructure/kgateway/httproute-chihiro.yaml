@@ -28,6 +28,11 @@ spec:
           kind: Backend
           group: gateway.kgateway.dev
       filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: X-Forwarded-Host
+                value: chihiro.rpcu.io
         - type: URLRewrite
           urlRewrite:
             hostname: chihiro.mgmt.rpcu.lan
