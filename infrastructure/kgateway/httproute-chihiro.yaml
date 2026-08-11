@@ -23,7 +23,19 @@ spec:
   hostnames:
     - "chihiro.rpcu.io"
   rules:
-    - backendRefs:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /ws
+      backendRefs:
+        - name: chihiro-mgmt
+          kind: Backend
+          group: gateway.kgateway.dev
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
         - name: chihiro-mgmt
           kind: Backend
           group: gateway.kgateway.dev
