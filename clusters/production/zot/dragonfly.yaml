@@ -16,7 +16,9 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
+      # Cache backing a single-replica zot: 72h peak ~7m CPU (Mimir).
+      # 100m was ~14x peak; 50m keeps headroom. Limit kept at 500m.
+      cpu: 50m
       memory: 256Mi
     limits:
       cpu: 500m

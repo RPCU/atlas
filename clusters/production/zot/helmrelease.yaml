@@ -60,7 +60,9 @@ spec:
         value: /etc/zot/certs/ca.crt
     resources:
       requests:
-        cpu: 100m
+        # Registry idles low: 72h peak ~3m CPU (Mimir). 100m was ~30x peak;
+        # 50m keeps headroom for pull bursts. Limit kept at 1 core.
+        cpu: 50m
         memory: 256Mi
       limits:
         cpu: "1"
