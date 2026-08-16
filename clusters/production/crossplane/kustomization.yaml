@@ -21,3 +21,4 @@ resources:
   - oidc-jellystat.yaml
   - oidc-jellysweep.yaml
   - oidc-zot.yaml
+  - oidc-openchoreo-backstage.yaml
