@@ -4,8 +4,8 @@ metadata:
   name: openchoreo-backstage
 spec:
   forProvider:
-    accessTokenRoleAssertion: false
-    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    accessTokenRoleAssertion: true
+    accessTokenType: OIDC_TOKEN_TYPE_JWT
     additionalOrigins: []
     appType: OIDC_APP_TYPE_WEB
     authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
