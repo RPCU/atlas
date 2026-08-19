@@ -1,7 +1,7 @@
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
 metadata:
-  name: openchoreo-backstage
+  name: openchoreo-thunderid
 spec:
   forProvider:
     accessTokenRoleAssertion: true
@@ -16,17 +16,17 @@ spec:
       - OIDC_GRANT_TYPE_REFRESH_TOKEN
     idTokenRoleAssertion: false
     idTokenUserinfoAssertion: true
-    name: openchoreo-backstage
+    name: openchoreo-thunderid
     orgId: "369994019545117645"
     postLogoutRedirectUris:
       - "*"
     projectId: "370001231734928333" # adminstration
     redirectUris:
-      - https://console.platform.rpcu.lan/api/auth/openchoreo-auth/handler/frame
+      - https://console.platform.rpcu.lan/api/auth/openchoreo-thunderid/handler/frame
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false
     version: OIDC_VERSION_1_0
   writeConnectionSecretToRef:
-    name: openchoreo-backstage-oidc
+    name: openchoreo-thunderid-oidc
     namespace: crossplane-system
