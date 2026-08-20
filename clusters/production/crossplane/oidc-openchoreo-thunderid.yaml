@@ -22,7 +22,7 @@ spec:
       - "*"
     projectId: "370001231734928333" # adminstration
     redirectUris:
-      - https://console.platform.rpcu.lan/api/auth/openchoreo-thunderid/handler/frame
+      - https://thunderid.platform.rpcu.lan/gate/callback
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false
