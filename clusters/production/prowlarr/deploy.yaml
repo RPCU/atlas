@@ -71,7 +71,7 @@ spec:
             - name: config
               mountPath: /config
         - name: flaresolverr
-          image: ghcr.io/thephaseless/byparr:main@sha256:bf69ec6d77de73d4109b1a02cdb5a3e8a9f919f4d08a76123a28ab31d673fa72
+          image: ghcr.io/thephaseless/byparr:main@sha256:f45e264bc1ec9b46902fac161392984699384ebbbb39f873807d764acc762d75
           ports:
             - name: flaresolverr
               containerPort: 8191
