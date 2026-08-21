@@ -31,7 +31,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Mint a short-lived GitHub App installation token (same pattern as
       # bealv's updatecli workflow). Uses the org's `rpcu-bot` App
@@ -42,13 +42,13 @@ jobs:
       #   PRIVATE_KEY  - the rpcu-bot App's private key (PEM)
       - name: Generate a token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.PRIVATE_KEY }}
 
       - name: Self-hosted Renovate
-        uses: renovatebot/github-action@v46.1.18
+        uses: renovatebot/github-action@b50d2ba2bd928235abdcc14d06dfafc217f1c565 # v46.1.18
         with:
           token: ${{ steps.app-token.outputs.token }}
         env:
