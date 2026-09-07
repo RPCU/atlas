@@ -25,10 +25,10 @@ spec:
   resources:
     requests:
       cpu: 25m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 500m
-      memory: 256Mi
+      memory: 512Mi
 ---
 # The budgets themselves. `requests_per_unit` is a TOKEN count, not a request
 # count, because the policy reports these descriptors with unit: Tokens.
@@ -110,12 +110,12 @@ spec:
           # `master`; there is no semver line. Pinned to a sha tag + digest so
           # Renovate can track it, same treatment as byparr and the seerr fork.
           image: envoyproxy/ratelimit:8fe6ea42@sha256:a61547259607d40aff153050c2a87873ca1676d1d9f5f06937d412000dcc2df1
-          command: ["/bin/ratelimit"]
+          command: ['/bin/ratelimit']
           env:
             - name: LOG_LEVEL
               value: warn
             - name: USE_STATSD
-              value: "false"
+              value: 'false'
             - name: REDIS_SOCKET_TYPE
               value: tcp
             - name: REDIS_URL
@@ -129,9 +129,9 @@ spec:
             # let an edit to ratelimit-config reload without a pod restart —
             # which a subPath mount would not do.
             - name: RUNTIME_WATCH_ROOT
-              value: "false"
+              value: 'false'
             - name: RUNTIME_IGNOREDOTFILES
-              value: "true"
+              value: 'true'
           ports:
             - name: http
               containerPort: 8080
