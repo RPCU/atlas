@@ -36,15 +36,7 @@ spec:
       memory: 128Mi
     limits:
       memory: 512Mi
-  deployment:
-    spec:
-      template:
-        metadata:
-          # Own label so podmonitor.yaml has a deterministic selector. The
-          # labels the deployer adds by default are an implementation detail of
-          # the controller image and are not part of any documented contract.
-          labels:
-            app.kubernetes.io/name: agentgateway-llm
+  deployment: {}
   service:
     spec:
       type: ClusterIP

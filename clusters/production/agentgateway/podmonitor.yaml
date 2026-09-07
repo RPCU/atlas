@@ -33,7 +33,8 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: agentgateway-llm
+      gateway.networking.k8s.io/gateway-name: llm
+      gateway.networking.k8s.io/gateway-class-name: agentgateway
   podMetricsEndpoints:
     - targetPort: 15020
       path: /metrics
