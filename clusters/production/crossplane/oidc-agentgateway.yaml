@@ -25,17 +25,18 @@ spec:
     idTokenRoleAssertion: true
     idTokenUserinfoAssertion: true
 
-    # Native + PKCE (auth method NONE) is the CLI/desktop shape: the client is
-    # public, holds no secret, and completes the code flow on a loopback
-    # redirect. That is how a human gets a token to put in ANTHROPIC_AUTH_TOKEN.
-    # Machine-to-machine callers should use a Zitadel *service user* instead of
-    # this app; service-user tokens are issued by the same org and validate
-    # against the same JWKS, so no gateway change is needed.
-    appType: OIDC_APP_TYPE_NATIVE
-    authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
+    # Supports two flows:
+    #   1. PKCE (authorization_code) — human users authenticate via browser,
+    #      get a JWT, paste it into opencode /connect.
+    #   2. Client credentials — machine callers exchange client_id + client_secret
+    #      for a JWT at the token endpoint (no browser needed).
+    # Both produce JWTs validated by agentgateway against the Zitadel JWKS.
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
     grantTypes:
       - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
       - OIDC_GRANT_TYPE_REFRESH_TOKEN
+      - OIDC_GRANT_TYPE_CLIENT_CREDENTIALS
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     redirectUris:
@@ -50,11 +51,10 @@ spec:
     version: OIDC_VERSION_1_0
     orgId: "369994019545117645"
     projectId: "370001231734928333" # administration
-  # Public client: the connection secret carries a client id but no usable
-  # client secret, so unlike the other apps there is no pushsecret-oidc.yaml
-  # backing it up to Vault — there is no secret material to protect. The
-  # gateway itself never reads this secret; it only needs the issuer's JWKS.
-  # It exists so the client id is discoverable from the cluster.
+  # Confidential client: the connection secret carries both client_id and
+  # client_secret. The secret is used for client_credentials (machine access)
+  # and can also be used for PKCE token exchange. Backed up to Vault via
+  # pushsecret-oidc.yaml so it survives cluster rebuilds.
   writeConnectionSecretToRef:
     name: agentgateway-oidc
     namespace: agentgateway-system
