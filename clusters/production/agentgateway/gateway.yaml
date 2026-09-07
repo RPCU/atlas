@@ -1,0 +1,70 @@
+# The agentgateway data plane for LLM traffic.
+#
+# This Gateway uses the "agentgateway" GatewayClass (installed by
+# infrastructure/agentgateway), NOT "kgateway". The agentgateway controller's
+# deployer watches it and provisions a matching proxy Deployment + Service, both
+# named "llm", in this namespace.
+#
+# The Service is deliberately ClusterIP: this proxy is NOT exposed directly.
+# Public ingress stays on the existing kgateway "https-external" Gateway
+# (Cloudflare DNS + Let's Encrypt wildcard), which forwards llm.rpcu.io to this
+# Service — see httproute-external.yaml. That keeps one public IP, one cert
+# chain, and one DNS owner for the whole cluster.
+#
+#   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
+#            -> Service llm:80 (this proxy, ClusterIP)
+#            -> AgentgatewayBackend -> api.anthropic.com
+#
+# allowedRoutes is "Same" because every route that should attach here lives in
+# this namespace. Widening it would let any namespace in the cluster attach a
+# route to a gateway that holds a paid LLM credential.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: llm
+  namespace: agentgateway-system
+spec:
+  logging:
+    format: json
+  # First install, so there is no Mimir history to size against. Follows the
+  # house rule: memory limit only, never a CPU limit (CPU is compressible; a
+  # limit only throttles). Revisit once the proxy has a few days of traffic.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  deployment:
+    spec:
+      template:
+        metadata:
+          # Own label so podmonitor.yaml has a deterministic selector. The
+          # labels the deployer adds by default are an implementation detail of
+          # the controller image and are not part of any documented contract.
+          labels:
+            app.kubernetes.io/name: agentgateway-llm
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: llm
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: llm
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -1,0 +1,60 @@
+# Model -> provider routing, on the agentgateway proxy itself.
+#
+# This is content-based routing: policy-prerouting.yaml lifts the "model" field
+# out of the JSON request body into an x-model header BEFORE route selection,
+# and the rules below match on that header. So a caller picks its provider
+# implicitly, just by naming a model, over a single endpoint.
+#
+# ADDING A PROVIDER = one more rule here, e.g.:
+#
+#   - matches:
+#       - path: {type: PathPrefix, value: /}
+#         headers:
+#           - {type: RegularExpression, name: x-model, value: "^gpt-.*"}
+#     backendRefs:
+#       - {name: openai, group: agentgateway.dev, kind: AgentgatewayBackend}
+#
+# There is NO catch-all rule, on purpose. An unknown model gets a 404 from the
+# gateway instead of being forwarded to Anthropic, which would fail deep in the
+# provider with a confusing error and still burn a request. 404 says exactly
+# what is wrong: no provider is configured for that model.
+#
+# Rule precedence here is Gateway API's, not file order: the longer path prefix
+# (/v1/models) wins for discovery calls, and the header-matching rule handles
+# everything that carries a model in its body.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: llm
+      namespace: agentgateway-system
+      sectionName: http
+  rules:
+    # Anthropic: any model named claude-*, on either API dialect
+    # (/v1/messages or /v1/chat/completions).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: "^claude-.*"
+      backendRefs:
+        - name: anthropic
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+    # Model discovery / client capability probes. These carry no model in the
+    # body, so they cannot be routed by x-model.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/models
+      backendRefs:
+        - name: anthropic
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

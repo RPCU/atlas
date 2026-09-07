@@ -1,0 +1,60 @@
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: agentgateway
+spec:
+  forProvider:
+    # THE TWO SETTINGS THAT MATTER, and why:
+    #
+    # accessTokenType: OIDC_TOKEN_TYPE_JWT — every other Oidc app in this repo
+    #   and in argus uses OIDC_TOKEN_TYPE_BEARER, which issues an OPAQUE token.
+    #   An opaque token carries no claims and cannot be validated against a
+    #   JWKS; it only works via introspection. agentgateway's jwtAuthentication
+    #   verifies signatures against
+    #   https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys, so it needs a real
+    #   JWT. Change this and the LLM gateway rejects every request.
+    #
+    # accessTokenRoleAssertion: true — the argus-owned `groupsClaim` Zitadel
+    #   Action flattens the user's project role grants into a `groups` claim,
+    #   but only for tokens where role assertion is on. That claim is what
+    #   policy-gateway.yaml keys the budget tier off (rpcu-admin /
+    #   public-admin / public-user). Without it every caller silently falls
+    #   through to the smallest tier.
+    accessTokenRoleAssertion: true
+    accessTokenType: OIDC_TOKEN_TYPE_JWT
+    idTokenRoleAssertion: true
+    idTokenUserinfoAssertion: true
+
+    # Native + PKCE (auth method NONE) is the CLI/desktop shape: the client is
+    # public, holds no secret, and completes the code flow on a loopback
+    # redirect. That is how a human gets a token to put in ANTHROPIC_AUTH_TOKEN.
+    # Machine-to-machine callers should use a Zitadel *service user* instead of
+    # this app; service-user tokens are issued by the same org and validate
+    # against the same JWKS, so no gateway change is needed.
+    appType: OIDC_APP_TYPE_NATIVE
+    authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+      - OIDC_GRANT_TYPE_REFRESH_TOKEN
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    redirectUris:
+      - http://localhost:8085/callback
+    postLogoutRedirectUris:
+      - "*"
+    additionalOrigins: []
+    clockSkew: 0s
+    devMode: false
+    name: agentgateway
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+    orgId: "369994019545117645"
+    projectId: "370001231734928333" # administration
+  # Public client: the connection secret carries a client id but no usable
+  # client secret, so unlike the other apps there is no pushsecret-oidc.yaml
+  # backing it up to Vault — there is no secret material to protect. The
+  # gateway itself never reads this secret; it only needs the issuer's JWKS.
+  # It exists so the client id is discoverable from the cluster.
+  writeConnectionSecretToRef:
+    name: agentgateway-oidc
+    namespace: agentgateway-system

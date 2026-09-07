@@ -1,0 +1,57 @@
+# Public ingress: llm.rpcu.io on the kgateway "https-external" Gateway.
+#
+# Two gateways in series, each doing what it is good at:
+#   https-external (kgateway)  -> public IP, Let's Encrypt wildcard *.rpcu.io,
+#                                 Cloudflare DNS record via ExternalDNS
+#   llm (agentgateway)         -> JWT auth, token budgets, prompt enrichment,
+#                                 provider routing and credential injection
+#
+# ExternalDNS on this cluster syncs `gateway-httproute` sources for the rpcu.io
+# zone with policy: sync, so the Cloudflare record for llm.rpcu.io is created
+# from this object — nothing else to do for DNS or TLS.
+#
+# Client setup once this is live (the JWT comes from Zitadel, see
+# crossplane/oidc-agentgateway.yaml):
+#   export ANTHROPIC_BASE_URL=https://llm.rpcu.io
+#   export ANTHROPIC_AUTH_TOKEN=<zitadel access token>
+#
+# Timeouts are generous because LLM responses stream for minutes: a long
+# extended-thinking turn can sit quiet well past Envoy's 300s default stream
+# idle timeout, which is what the TrafficPolicy below raises.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-external
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "llm.rpcu.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: "1800s"
+        backendRequest: "1800s"
+      backendRefs:
+        - name: llm
+          port: 80
+---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: llm-external
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-external
+  timeouts:
+    streamIdle: 1800s

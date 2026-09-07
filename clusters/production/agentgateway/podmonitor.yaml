@@ -1,0 +1,40 @@
+# Scrape the agentgateway proxy's Prometheus endpoint (port 15020).
+#
+# A PodMonitor, not a ServiceMonitor: the deployer-created Service only exposes
+# the Gateway's listener ports (80), not the admin/stats ports, so there is no
+# Service port to select. 15020 is reachable on the pod directly.
+#
+# The `release: kube-prometheus-stack` label is MANDATORY. The Sveltos-pushed
+# kube-prometheus-stack on this cluster runs with
+# podMonitorSelectorNilUsesHelmValues: true, so an unlabeled PodMonitor is
+# silently ignored — no error, just no metrics. Same trap as palworld's
+# ServiceMonitor.
+#
+# Metrics land in the local Prometheus and are remote_written to the central
+# Mimir on mgmt tagged cluster="production". The interesting series is
+# agentgateway_gen_ai_client_token_usage_sum, which policy-gateway.yaml labels
+# with llm_group and llm_user — that is how you see spend per person:
+#
+#   sum by (llm_user) (
+#     increase(agentgateway_gen_ai_client_token_usage_sum{
+#       cluster="production", gen_ai_token_type=~"input|output"}[24h])
+#   )
+#
+# Do NOT also add input_cache_read/input_cache_write to that selector: the
+# input series already includes cached tokens, so it would double count.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-llm
+  namespace: agentgateway-system
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentgateway-llm
+  podMetricsEndpoints:
+    - targetPort: 15020
+      path: /metrics
+      interval: 60s

@@ -145,9 +145,11 @@
       pinDigests: true,
     },
 
-    // Fork-build images that ship no semver tags:
+    // Images that ship no semver tags:
     //   - ghcr.io/thephaseless/byparr:main (only latest/main/nightly exist)
     //   - zadki3l/seerr:michaelhthomas-oidc-<sha> (fork branch build)
+    //   - envoyproxy/ratelimit:<git-sha> (upstream publishes only git-sha tags
+    //     and a moving `master`; there is no release line at all)
     // Their human-readable tag never changes, so the ONLY way Renovate can
     // raise a reproducible update PR is by pinning + tracking the digest.
     {
@@ -155,6 +157,7 @@
       matchPackageNames: [
         "ghcr.io/thephaseless/byparr",
         "zadki3l/seerr",
+        "envoyproxy/ratelimit",
       ],
       pinDigests: true,
     },

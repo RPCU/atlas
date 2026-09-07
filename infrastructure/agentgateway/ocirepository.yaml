@@ -1,0 +1,29 @@
+# The agentgateway Helm charts are published as OCI artifacts to
+# cr.agentgateway.dev, not to a classic HelmRepository index. Flux consumes them
+# via OCIRepository + HelmRelease.chartRef (there is no HelmRepository object for
+# this app, unlike cnpg/external-dns/zot).
+#
+# Two charts, pinned to the same version on purpose: the CRD chart must never lag
+# behind the controller that reconciles those CRDs.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: agentgateway-crds
+  namespace: agentgateway-system
+spec:
+  interval: 1h
+  url: oci://cr.agentgateway.dev/charts/agentgateway-crds
+  ref:
+    tag: v1.5.0
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: agentgateway
+  namespace: agentgateway-system
+spec:
+  interval: 1h
+  url: oci://cr.agentgateway.dev/charts/agentgateway
+  ref:
+    tag: v1.5.0

@@ -66,7 +66,9 @@ Atlas resources depend on objects that are **NOT defined in this repo**:
 | HelmRepository `external-dns` (ns `internal-dns`, argus base)                   | `infrastructure/external-dns/helmrelease.yaml` (Cloudflare instance)                                                                                        |
 | StorageClasses: `csi-cinder-sc-delete` (default, RWO) + `ceph-cephfs` (RWX)     | all PVCs (see Storage section)                                                                                                                              |
 | Shared Zitadel org/projects (argus openstack overlay owns the platform)         | `clusters/production/crossplane/oidc-*.yaml` (reference org/project by literal external ID)                                                                 |
-| DragonflyDB operator (argus Sveltos `dragonfly` add-on, label-gated)            | `clusters/production/zot/dragonfly.yaml` (the `Dragonfly` instance CR for zot's Redis remoteCache)                                                          |
+| DragonflyDB operator (argus Sveltos `dragonfly` add-on, label-gated)            | `clusters/production/zot/dragonfly.yaml` (zot's Redis remoteCache) **and** `clusters/production/agentgateway/ratelimit.yaml` (the LLM budget counters)      |
+| Zitadel `groupsClaim` Action + the org's roles (argus openstack overlay)        | `clusters/production/agentgateway/policy-gateway.yaml` keys LLM token budgets off the `groups` claim (`rpcu-admin` / `public-admin` / `public-user`)        |
+| kube-prometheus-stack (Sveltos `monitoring` add-on)                            | `clusters/production/{palworld/servicemonitor,agentgateway/podmonitor}.yaml` — both MUST carry `release: kube-prometheus-stack`                             |
 
 If something in atlas fails to reconcile, check whether its argus-side
 prerequisite (Sveltos add-on label, Vault path, shared Gateway) exists first.
@@ -97,6 +99,7 @@ the `atlas` Flux Kustomization reconciles):
 - `kgateway.yaml` - Flux Kustomization `kgateway-external` → `./infrastructure/kgateway` (wait: true)
 - `external-dns.yaml` - Flux Kustomization `external-dns` → `./infrastructure/external-dns` (wait: true)
 - `cnpg.yaml` - Flux Kustomization `cnpg` → `./infrastructure/cnpg` (wait: true) — installs the CloudNativePG operator + CRDs consumed by jellystat's Postgres `Cluster`
+- `agentgateway.yaml` - **TWO** Flux Kustomizations: `agentgateway` → `./infrastructure/agentgateway` (wait: true, the control plane + CRDs) and `agentgateway-resources` → `./clusters/production/agentgateway` (**dependsOn agentgateway**). Split like crossplane/crossplane-resources because the app dir uses the `agentgateway.dev/v1alpha1` CRD group, which does not exist until the control plane is installed — applying it from the root `atlas` Kustomization would fail every reconcile until the CRDs landed
 - `crossplane.yaml` - Flux Kustomization `crossplane` → **argus** `./infrastructure/crossplane` (sourceRef GitRepository `flux-system`, i.e. the argus repo — the path does not exist in atlas)
 - `crossplane-zitadel.yaml` - Flux Kustomization `crossplane-zitadel` → **argus** `./infrastructure/crossplane-zitadel` (dependsOn crossplane). Provider package only.
 - `crossplane-resources.yaml` - Flux Kustomization `crossplane-resources` → `./clusters/production/crossplane` (dependsOn crossplane-zitadel, **prune: false**)
@@ -218,6 +221,68 @@ the `atlas` Flux Kustomization reconciles):
   > group ACL to grant RW. (3) CLI clients do `docker login zot.rpcu.io` with an
   > htpasswd user; the web UI uses Zitadel OIDC.
 
+**LLM Gateway** (in namespace `agentgateway-system`, which is created by
+`infrastructure/agentgateway/namespace.yaml`, not here). Reconciled by the
+`agentgateway-resources` Flux Kustomization, **not** by the root `atlas` one:
+
+- `agentgateway/` - The LLM data plane: one endpoint (`llm.rpcu.io`) fronting
+  many models and, in future, many providers.
+
+  **Traffic path — two gateways in series, each doing what it is good at:**
+
+  ```
+  internet → https-external (kgateway, 172.16.255.10, TLS terminate, LE wildcard)
+           → Service llm:80 (ClusterIP, the agentgateway proxy)
+           → agentgateway (JWT auth, token budget, prompt enrichment, routing)
+           → AgentgatewayBackend anthropic → api.anthropic.com
+  ```
+
+  The `https-external` Gateway is `gatewayClassName: kgateway` and **cannot**
+  host the LLM policies — those need the `agentgateway` GatewayClass. Hence the
+  second Gateway. Keeping it ClusterIP means one public IP, one cert chain and
+  one DNS owner for the whole cluster.
+
+  - `gateway.yaml` - `AgentgatewayParameters` `llm` (**`service.spec.type: ClusterIP`** — the deployer defaults to LoadBalancer, which would burn an Octavia LB; also sets the pod label `app.kubernetes.io/name: agentgateway-llm` that `podmonitor.yaml` selects) + Gateway `llm` (class `agentgateway`, HTTP :80, `allowedRoutes.namespaces.from: Same` so no other namespace can attach a route to a gateway holding a paid credential). The controller's deployer creates the `llm` Deployment + Service from this.
+  - `secrets.yaml` - ExternalSecret `anthropic-credentials`, key **`Authorization`** ← Vault `secrets-production/agentgateway/anthropic` property `apiKey`. `Authorization` is the key name `policies.auth.secretRef` reads by default; for the `anthropic` provider agentgateway rewrites it into the `x-api-key` header automatically. **Populate out of band.**
+  - `backends.yaml` - `AgentgatewayBackend` `anthropic`. **`provider.anthropic` is deliberately `{}`** — setting `model:` there would pin every request to one model and ignore what the caller asked for. `policies.ai.routes` serves BOTH dialects on the same host: `/v1/messages` → `Messages` (Anthropic native / Claude Code) and `/v1/chat/completions` → `Completions` (OpenAI-compatible SDKs).
+  - `httproute.yaml` - Model → provider routing on the agentgateway proxy, matching the `x-model` header. **No catch-all rule on purpose**: an unknown model 404s at the gateway instead of being forwarded to Anthropic and failing confusingly deep in the provider.
+  - `policy-prerouting.yaml` - `AgentgatewayPolicy` `llm-extract-model`: lifts `json(request.body).model` into the `x-model` header. MUST be `phase: PreRouting` and MUST target the **Gateway** — on an HTTPRoute the header would be set after the routing decision. PreRouting is a separate execution phase, so this never merges with the policy below.
+  - `policy-gateway.yaml` - `AgentgatewayPolicy` `llm`, the security + cost policy, all in **one** resource. Contains `traffic.jwtAuthentication` (Strict, issuer `https://rpcu-gabeck.eu1.zitadel.cloud`, JWKS `.../oauth/v2/keys`), `traffic.authorization` (caller must hold one of the org's roles), `traffic.rateLimit.global` (the token budgets) and `frontend.metrics` (adds `llm_group`/`llm_user` labels). **They are combined deliberately: when two AgentgatewayPolicy resources target the same Gateway, one silently overwrites the other by creation order and BOTH still report ACCEPTED/ATTACHED.**
+  - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend` (a house system message prepended to every request). Targets the **HTTPRoute** so it can later differ per provider. Only works on route types agentgateway parses as chat — a `Passthrough` route is opaque and cannot be enriched.
+  - `ratelimit.yaml` - Where the budgets actually live: a `Dragonfly` CR `llm-ratelimit-dragonfly` (Redis-compatible store) + the Envoy reference rate limit service (gRPC :8081) + its `ratelimit-config` ConfigMap. agentgateway holds **no** counters; it only reports descriptors and costs.
+  - `podmonitor.yaml` - `PodMonitor` (not ServiceMonitor — the deployer's Service exposes only :80, not the :15020 stats port). **MUST carry `release: kube-prometheus-stack`** or it is silently ignored.
+  - `httproute-external.yaml` - **Public**: `llm.rpcu.io` on `https-external` → `llm:80`, 1800s timeouts + a kgateway `TrafficPolicy` raising `streamIdle` to 1800s (a long extended-thinking turn can idle past Envoy's 300s default and get cut).
+
+  **Budgets: per user AND per group.** Identity is a Zitadel JWT. The
+  argus-owned `groupsClaim` Action flattens the caller's project role grants
+  into a `groups` claim; a CEL expression collapses that array to a single tier
+  (highest privilege wins) and the policy emits two independent descriptors:
+
+  | Descriptor        | Counter                                    | Default budget                                     |
+  | ----------------- | ------------------------------------------ | -------------------------------------------------- |
+  | `[group, user_id]` | one per user, at their group's rate       | rpcu-admin 5M · public-admin 1M · public-user 100k |
+  | `[group_total]`    | one per group, shared by all its members  | rpcu-admin 20M · public-admin 5M · public-user 1M  |
+
+  `unit: Tokens` means the cost debited per request is the LLM token count, so
+  `requests_per_unit` in `ratelimit.yaml` is literally a daily token budget.
+  Over budget → 429. Edit the numbers in `ratelimit.yaml`; the key names there
+  must match the descriptor `name`s in `policy-gateway.yaml` exactly.
+
+  > **⚠️ Two failure modes that are silent, not loud.**
+  > (1) If a descriptor's CEL expression fails at request time, agentgateway
+  > **skips that descriptor and enforces no limit** — a cost control that fails
+  > open. That is why the group expression is a plain ternary guarded by
+  > `default()` and not something clever with `with()`.
+  > (2) Rate limiting is evaluated **before** prompt guards but **after**
+  > authentication: an unauthenticated request never spends anyone's budget, but
+  > a request rejected by a future guardrail still does.
+
+  > **agentgateway out-of-band prereqs.** (1) Vault
+  > `secrets-production/agentgateway/anthropic` key `apiKey`. (2) The Zitadel
+  > `Oidc` app must issue **real JWTs** — see `crossplane/oidc-agentgateway.yaml`.
+  > (3) Counters live only in Dragonfly memory: if it restarts, budgets reset to
+  > full for the current window. Accepted tradeoff for a cost guardrail.
+
 ### infrastructure/ - Production-Specific Glue
 
 **cert-manager/** — NOT a cert-manager install (that comes from Sveltos).
@@ -242,6 +307,22 @@ Only the public Gateway:
 - `namespace.yaml` - Namespace `cnpg-system`
 - `helmrepo.yaml` - HelmRepository `cloudnative-pg` → `https://cloudnative-pg.github.io/charts`
 - `helmrelease.yaml` - HelmRelease `cloudnative-pg` (chart `cloudnative-pg` **0.29.0**, appVersion 1.30.0), installs the `postgresql.cnpg.io` CRDs (`crds.create: true`, install `Create` / upgrade `CreateReplace`)
+
+**agentgateway/** — The **agentgateway control plane** (NOT argus/Sveltos-provided; installed HERE for the same reason as cnpg — no other cluster needs an LLM gateway yet). Consumed by `clusters/production/agentgateway/`:
+
+- `namespace.yaml` - Namespace `agentgateway-system`
+- `ocirepository.yaml` - **OCIRepository** `agentgateway-crds` + `agentgateway` → `oci://cr.agentgateway.dev/charts/...`, both `tag: v1.5.0`. These charts are OCI artifacts, so there is no `HelmRepository` here (unlike cnpg/external-dns/zot); Flux consumes them via `HelmRelease.chartRef`
+- `helmrelease.yaml` - HelmRelease `agentgateway-crds` (the `agentgateway.dev/v1alpha1` CRDs) + HelmRelease `agentgateway` (**dependsOn** the CRD release; the controller). Both use `upgrade.strategy: RetryOnFailure`
+
+> **⚠️ agentgateway is NOT kgateway.** It is a separate project with its own
+> controller, its own **`agentgateway` GatewayClass**, and its own CRD group
+> (`agentgateway.dev/v1alpha1`: `AgentgatewayBackend`, `AgentgatewayPolicy`,
+> `AgentgatewayParameters`, `AgentgatewayModel`). It coexists with the
+> argus/Sveltos-delivered kgateway controller — the two watch different
+> GatewayClasses and never contend for a Gateway. Do not confuse
+> `agentgateway.dev/v1alpha1` `AgentgatewayPolicy` with
+> `gateway.kgateway.dev/v1alpha1` `TrafficPolicy`; both exist in this repo and
+> both appear in `clusters/production/agentgateway/`.
 
 ---
 

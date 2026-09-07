@@ -1,0 +1,68 @@
+# agentgateway control plane.
+#
+# IMPORTANT: this is NOT kgateway. Agentgateway ships its own controller, its own
+# "agentgateway" GatewayClass, and its own CRD group (agentgateway.dev/v1alpha1:
+# AgentgatewayBackend / AgentgatewayPolicy / AgentgatewayParameters /
+# AgentgatewayModel). It coexists with the argus/Sveltos-delivered kgateway
+# controller — they watch different GatewayClasses and never fight over a Gateway.
+#
+# The controller is a pure control plane: it watches Gateway API + agentgateway
+# resources, translates them into agentgateway's config model, serves that config
+# to proxies over xDS, and (via its deployer) provisions one agentgateway proxy
+# Deployment per Gateway that uses the "agentgateway" GatewayClass. The actual
+# LLM data plane lives in those proxy pods, not here.
+#
+# Installed from atlas rather than argus for the same reason as cnpg: no other
+# cluster in the fleet needs an LLM gateway yet. If that changes, promote this to
+# an argus Sveltos add-on and delete this directory.
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: agentgateway-crds
+  namespace: agentgateway-system
+spec:
+  interval: 1h
+  releaseName: agentgateway-crds
+  chartRef:
+    kind: OCIRepository
+    name: agentgateway-crds
+    namespace: agentgateway-system
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: agentgateway
+  namespace: agentgateway-system
+spec:
+  interval: 1h
+  releaseName: agentgateway
+  dependsOn:
+    - name: agentgateway-crds
+  chartRef:
+    kind: OCIRepository
+    name: agentgateway
+    namespace: agentgateway-system
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    # Control-plane container. No usage history exists yet (first install), so
+    # this is the chart default request with a memory limit added, matching the
+    # house style of "request ~= expected steady state, memory limit only, never
+    # a CPU limit". Revisit against Mimir once the gateway has a few days of
+    # traffic — see the cnpg/kgateway HelmReleases for the same treatment.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    controller:
+      replicaCount: 1
+      logLevel: info

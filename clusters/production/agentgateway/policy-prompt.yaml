@@ -1,0 +1,41 @@
+# Prompt enrichment: system prompts that every request gets, managed centrally
+# instead of being copy-pasted into each client.
+#
+# `prepend` inserts these messages BEFORE the caller's own messages, so a client
+# that sends its own system prompt still gets it — both are present, ours first.
+# Use `append` instead for instructions that should win over the caller's.
+#
+# This targets the HTTPRoute rather than the Gateway so the enrichment can later
+# differ per provider or per route (e.g. a stricter preamble on a cheap model)
+# without touching the auth/budget policy.
+#
+# Constraint from the API: prompt enrichment only applies to route types that
+# agentgateway parses as chat, which is why backends.ai.routes maps
+# /v1/messages -> Messages and /v1/chat/completions -> Completions. A
+# Passthrough route is opaque to the gateway and cannot be enriched.
+#
+# THIS IS THE CUSTOMIZATION POINT — edit the content below to taste. Keep it
+# short: every token here is prepended to every request and is billed on every
+# call, including cache misses.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-prompt
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm
+  backend:
+    ai:
+      prompt:
+        prepend:
+          - role: system
+            content: >-
+              You are accessed through the RPCU shared LLM gateway. Prefer
+              precise, technically accurate answers over agreeable ones, and say
+              plainly when something is unknown or uncertain rather than
+              guessing. Be concise: responses are metered against a per-user
+              token budget.

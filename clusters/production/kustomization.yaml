@@ -5,6 +5,7 @@ resources:
   - cert-manager.yaml
   - external-dns.yaml
   - cnpg.yaml
+  - agentgateway.yaml
   - crossplane.yaml
   - crossplane-zitadel.yaml
   - crossplane-resources.yaml

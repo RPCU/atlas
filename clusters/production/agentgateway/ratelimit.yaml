@@ -1,0 +1,181 @@
+# Global rate limit service — where the token budgets actually live.
+#
+# agentgateway only *reports* descriptors and costs; it holds no counters. This
+# service (Envoy's reference rate limit implementation, gRPC on 8081) owns the
+# budgets and the counters, backed by a Redis-compatible store. That split is
+# what makes a budget survive a proxy restart and stay correct across replicas.
+#
+# The store is Dragonfly, reconciled by the DragonflyDB operator that the argus
+# Sveltos "dragonfly" add-on already installs on this cluster (label
+# sveltos.argus.rpcu.io/dragonfly: enabled). Same pattern as zot's dedup cache;
+# the operator is NOT in this repo.
+#
+# Counters are in-memory only and deliberately not persisted: if Dragonfly
+# restarts, budgets reset to full for the current window. Losing a day of
+# accounting is an acceptable failure mode for a cost guardrail; paying for a
+# PVC and a backup story for it is not.
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: llm-ratelimit-dragonfly
+  namespace: agentgateway-system
+spec:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+---
+# The budgets themselves. `requests_per_unit` is a TOKEN count, not a request
+# count, because the policy reports these descriptors with unit: Tokens.
+#
+# Keys must match the descriptor entry `name`s in policy-gateway.yaml exactly
+# (case-sensitive), and `domain` must match the policy's `domain`.
+#
+# Nested descriptors give "per user, at a limit that depends on their group":
+# the outer key selects the tier, the inner user_id key gets its own counter per
+# distinct value. The flat group_total descriptors are the separate whole-group
+# ceiling.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ratelimit-config
+  namespace: agentgateway-system
+data:
+  config.yaml: |
+    domain: agentgateway
+    descriptors:
+      # ---- Per-user daily token budget, tiered by Zitadel group ----
+      - key: group
+        value: rpcu-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 5000000
+      - key: group
+        value: public-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 1000000
+      - key: group
+        value: public-user
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 100000
+
+      # ---- Whole-group daily ceiling ----
+      - key: group_total
+        value: rpcu-admin
+        rate_limit:
+          unit: day
+          requests_per_unit: 20000000
+      - key: group_total
+        value: public-admin
+        rate_limit:
+          unit: day
+          requests_per_unit: 5000000
+      - key: group_total
+        value: public-user
+        rate_limit:
+          unit: day
+          requests_per_unit: 1000000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimit
+  namespace: agentgateway-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratelimit
+  template:
+    metadata:
+      labels:
+        app: ratelimit
+    spec:
+      containers:
+        - name: ratelimit
+          # envoyproxy/ratelimit publishes only git-sha tags and a moving
+          # `master`; there is no semver line. Pinned to a sha tag + digest so
+          # Renovate can track it, same treatment as byparr and the seerr fork.
+          image: envoyproxy/ratelimit:8fe6ea42@sha256:a61547259607d40aff153050c2a87873ca1676d1d9f5f06937d412000dcc2df1
+          command: ["/bin/ratelimit"]
+          env:
+            - name: LOG_LEVEL
+              value: warn
+            - name: USE_STATSD
+              value: "false"
+            - name: REDIS_SOCKET_TYPE
+              value: tcp
+            - name: REDIS_URL
+              value: llm-ratelimit-dragonfly:6379
+            - name: RUNTIME_ROOT
+              value: /data
+            - name: RUNTIME_SUBDIRECTORY
+              value: ratelimit
+            # Watch the config subdirectory rather than the root, and skip the
+            # `..data` symlink that a ConfigMap volume creates. Together these
+            # let an edit to ratelimit-config reload without a pod restart —
+            # which a subPath mount would not do.
+            - name: RUNTIME_WATCH_ROOT
+              value: "false"
+            - name: RUNTIME_IGNOREDOTFILES
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /data/ratelimit/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: ratelimit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimit
+  namespace: agentgateway-system
+spec:
+  selector:
+    app: ratelimit
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 8081
+      targetPort: grpc

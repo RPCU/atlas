@@ -22,3 +22,4 @@ resources:
   - oidc-jellysweep.yaml
   - oidc-zot.yaml
   - oidc-openchoreo-thunderid.yaml
+  - oidc-agentgateway.yaml

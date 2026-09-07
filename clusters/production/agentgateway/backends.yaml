@@ -1,0 +1,42 @@
+# LLM providers. One AgentgatewayBackend per provider (or per credential — a
+# Claude subscription/seat and a pay-as-you-go API key would be two backends).
+#
+# ADDING A PROVIDER is deliberately three small edits and nothing else:
+#   1. a Secret here-alike in secrets.yaml (Vault path + ExternalSecret)
+#   2. an AgentgatewayBackend in this file
+#   3. one rule in httproute.yaml matching that provider's model prefix
+# No client change, no new hostname, no new certificate.
+#
+# NOTE: provider.anthropic is intentionally left empty ({}). Setting
+# `model:` there would PIN every request to one model and silently ignore what
+# the caller asked for, which defeats "many models through one endpoint". With
+# it unset the model is taken from the request body, and the HTTPRoute decides
+# which provider that model belongs to.
+#
+# policies.ai.routes maps URL path suffixes (ends-with match) to the API shape
+# agentgateway should parse. Both API dialects are served on the same host:
+#   /v1/messages              -> Anthropic native (Claude Code, Anthropic SDK)
+#   /v1/chat/completions      -> OpenAI-compatible (LangChain, OpenAI SDK, etc.)
+# Serving both is what lets a future OpenAI/Gemini backend sit behind the exact
+# same client configuration.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic: {}
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-credentials
+    ai:
+      routes:
+        "/v1/messages": "Messages"
+        "/v1/messages/count_tokens": "AnthropicTokenCount"
+        "/v1/chat/completions": "Completions"
+        "/v1/models": "Models"
+        "*": "Passthrough"

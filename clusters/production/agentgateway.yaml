@@ -1,0 +1,43 @@
+# Two Kustomizations, in dependency order — same shape as crossplane /
+# crossplane-resources, and for the same reason.
+#
+# The app resources under ./clusters/production/agentgateway use a CRD group
+# (agentgateway.dev/v1alpha1) that does not exist on this cluster until the
+# control plane's CRD chart is installed. If they were applied by the root
+# `atlas` Kustomization like the media apps are, every reconcile before the CRDs
+# landed would fail with "no matches for kind AgentgatewayBackend" and drag the
+# whole root Kustomization into a NotReady state. Splitting them out with an
+# explicit dependsOn makes the ordering a guarantee instead of a race.
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentgateway
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: atlas
+    namespace: flux-system
+  path: ./infrastructure/agentgateway
+  prune: true
+  wait: true
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentgateway-resources
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  dependsOn:
+    - name: agentgateway
+  sourceRef:
+    kind: GitRepository
+    name: atlas
+    namespace: flux-system
+  path: ./clusters/production/agentgateway
+  prune: true
+  timeout: 5m
