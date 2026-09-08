@@ -71,11 +71,12 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
-            limits:
-              memory: 2Gi
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
+            - name: models
+              mountPath: /tmp
+              subPath: tmp
       containers:
         - name: ollama
           image: ollama/ollama:0.33.3
@@ -119,13 +120,14 @@ spec:
             requests:
               cpu: "1"
               memory: 4Gi
-            # Memory only, per the house rule: a CPU limit would just throttle
-            # generation, and this is the one workload where CPU *is* the product.
             limits:
               memory: 8Gi
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
+            - name: models
+              mountPath: /tmp
+              subPath: tmp
       volumes:
         - name: models
           persistentVolumeClaim:
