@@ -32,7 +32,7 @@ spec:
             # observed steady-state baseline (~500Mi RSS, low idle CPU).
             requests:
               memory: 1Gi
-              cpu: 100m
+              cpu: 200m
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
           image: docker.io/jellyfin/jellyfin:10.11.11
