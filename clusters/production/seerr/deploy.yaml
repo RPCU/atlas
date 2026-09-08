@@ -48,8 +48,8 @@ spec:
               exec npm start
           resources:
             requests:
-              memory: 300Mi
-              cpu: 50m
+              memory: 128Mi
+              cpu: 25m
             limits:
               memory: 600Mi
           ports:

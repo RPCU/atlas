@@ -31,8 +31,8 @@ spec:
             # never be throttled/OOM-killed. Requests only, sized to the
             # observed steady-state baseline (~500Mi RSS, low idle CPU).
             requests:
-              memory: 2Gi
-              cpu: 250m
+              memory: 1Gi
+              cpu: 100m
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
           image: docker.io/jellyfin/jellyfin:10.11.11

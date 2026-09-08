@@ -23,8 +23,8 @@ spec:
             - serve
           resources:
             requests:
-              memory: 64Mi
-              cpu: 50m
+              memory: 48Mi
+              cpu: 25m
             limits:
               memory: 300Mi
           ports:

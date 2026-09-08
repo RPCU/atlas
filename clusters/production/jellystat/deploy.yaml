@@ -21,8 +21,8 @@ spec:
           image: cyfershepard/jellystat:1.1.11
           resources:
             requests:
-              memory: 200Mi
-              cpu: 50m
+              memory: 128Mi
+              cpu: 25m
             limits:
               memory: 400Mi
           ports:
