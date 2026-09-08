@@ -5,9 +5,14 @@
 # digit tokens/sec — fine for a handful of interactive users through Open WebUI,
 # not something to point a batch job at.
 #
-# Model choice: qwen3:4b, ~2.5GB quantised. It fits alongside everything else on
-# a 14.6Gi worker with room to spare, and is the largest model that still
-# responds at a usable rate on 2.6 cores.
+# Model choice: llama3.2:1b, ~0.8GB quantised (Q8_0). On a CPU node, token
+# generation is MEMORY-BANDWIDTH bound — each token streams the whole weight set
+# through RAM once, so tokens/sec ≈ mem_bandwidth ÷ bytes_per_token. A ~1B model
+# moves roughly a third of the bytes of qwen3:4b, so it is the fastest usable
+# option here. It is also NOT a reasoning model: unlike qwen3 it answers directly
+# instead of burning tokens "thinking", which matters far more than raw tok/s for
+# how fast a reply *feels*. This node is 6 vCPU with dual-channel DDR4; do not
+# expect "instant" (that needs a GPU) — expect a few tokens/sec, readable live.
 #
 # Ollama's OpenAI-compatible surface (/v1/*) is what agentgateway talks to; its
 # native /api/* surface is only used by the probes and the init container. The
@@ -61,7 +66,7 @@ spec:
               ollama serve &
               pid=$!
               until ollama list >/dev/null 2>&1; do sleep 1; done
-              ollama pull qwen3:4b
+              ollama pull llama3.2:1b
               kill "$pid"
               wait "$pid" 2>/dev/null || true
           env:
@@ -91,6 +96,17 @@ spec:
               value: '1'
             - name: OLLAMA_NUM_PARALLEL
               value: '1'
+            # The node is 6 vCPU but ~1 core is taken by kubelet/Cilium/CSI, so
+            # inference only ever gets ~5 cores. Pin threads to 5: asking for 6
+            # just adds context-switching against the system daemons and slows
+            # generation (which is bandwidth-bound anyway, not thread-bound).
+            - name: OLLAMA_NUM_THREADS
+              value: '5'
+            # Cap context so a single runaway request cannot grow unbounded and
+            # hold the one inference slot forever (with NUM_PARALLEL=1 that stalls
+            # every other user). 4096 is plenty for interactive chat.
+            - name: OLLAMA_CONTEXT_LENGTH
+              value: '4096'
           ports:
             - name: http
               containerPort: 11434
@@ -115,10 +131,13 @@ spec:
             failureThreshold: 6
           resources:
             requests:
-              cpu: '4'
-              memory: 4Gi
+              # Match OLLAMA_NUM_THREADS so the scheduler reserves the cores the
+              # inference threadpool will actually use. No CPU limit — CPU is the
+              # product here and a limit only throttles; memory is capped instead.
+              cpu: '5'
+              memory: 2Gi
             limits:
-              memory: 8Gi
+              memory: 4Gi
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
