@@ -26,3 +26,7 @@ spec:
           value:
             kamaji-etcd:
               clusterDomain: production.local
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 256Mi
