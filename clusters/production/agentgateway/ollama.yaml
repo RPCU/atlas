@@ -88,9 +88,9 @@ spec:
             # makes every request slower without raising throughput, and each
             # parallel slot allocates its own KV cache.
             - name: OLLAMA_MAX_LOADED_MODELS
-              value: "1"
+              value: '1'
             - name: OLLAMA_NUM_PARALLEL
-              value: "1"
+              value: '1'
           ports:
             - name: http
               containerPort: 11434
@@ -115,7 +115,7 @@ spec:
             failureThreshold: 6
           resources:
             requests:
-              cpu: "1"
+              cpu: '4'
               memory: 4Gi
             limits:
               memory: 8Gi
