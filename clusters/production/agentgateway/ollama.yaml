@@ -52,7 +52,7 @@ spec:
       # cheap no-op on restart once the layers are on the PVC.
       initContainers:
         - name: pull-model
-          image: ollama/ollama:0.33.3
+          image: alpine/ollama:latest
           command:
             - /bin/sh
             - -c
@@ -74,12 +74,9 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
-            - name: models
-              mountPath: /tmp
-              subPath: tmp
       containers:
         - name: ollama
-          image: ollama/ollama:0.33.3
+          image: alpine/ollama:latest
           env:
             - name: OLLAMA_HOST
               value: 0.0.0.0:11434
@@ -125,9 +122,6 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
-            - name: models
-              mountPath: /tmp
-              subPath: tmp
       volumes:
         - name: models
           persistentVolumeClaim:
