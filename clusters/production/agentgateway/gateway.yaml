@@ -5,19 +5,19 @@
 # deployer watches it and provisions a matching proxy Deployment + Service, both
 # named "llm", in this namespace.
 #
-# The Service is deliberately ClusterIP: this proxy is NOT exposed directly.
-# Public ingress stays on the existing kgateway "https-external" Gateway
-# (Cloudflare DNS + Let's Encrypt wildcard), which forwards llm.rpcu.io to this
-# Service — see httproute-external.yaml. That keeps one public IP, one cert
-# chain, and one DNS owner for the whole cluster.
+# The Service is ClusterIP and there is NO public HTTPRoute pointing at it.
+# That is a security control, not an oversight: this proxy no longer
+# authenticates anything (see policy-gateway.yaml), so its only protection is
+# being unreachable from outside the cluster. Open WebUI is the authenticated
+# front door and the sole client.
 #
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
+#            -> open-webui  (Zitadel OIDC login)
 #            -> Service llm:80 (this proxy, ClusterIP)
-#            -> AgentgatewayBackend -> api.anthropic.com
+#            -> AgentgatewayBackend -> ollama:11434 (in-cluster, CPU)
 #
-# allowedRoutes is "Same" because every route that should attach here lives in
-# this namespace. Widening it would let any namespace in the cluster attach a
-# route to a gateway that holds a paid LLM credential.
+# allowedRoutes is "Same" for the same reason: widening it would let any
+# namespace in the cluster attach a route to an unauthenticated LLM endpoint.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayParameters

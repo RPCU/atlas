@@ -10,13 +10,14 @@
 # without touching the auth/budget policy.
 #
 # Constraint from the API: prompt enrichment only applies to route types that
-# agentgateway parses as chat, which is why backends.ai.routes maps
-# /v1/messages -> Messages and /v1/chat/completions -> Completions. A
-# Passthrough route is opaque to the gateway and cannot be enriched.
+# agentgateway parses as chat, which is why backends.yaml maps
+# /v1/chat/completions -> Completions. The `*` -> Passthrough catch-all in that
+# same file is opaque to the gateway and cannot be enriched — so a client that
+# calls some other path gets no system prompt at all.
 #
 # THIS IS THE CUSTOMIZATION POINT — edit the content below to taste. Keep it
-# short: every token here is prepended to every request and is billed on every
-# call, including cache misses.
+# short: every token here is prepended to every request, and on CPU inference
+# every extra token in the prompt is time the user waits.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -37,5 +38,5 @@ spec:
               You are accessed through the RPCU shared LLM gateway. Prefer
               precise, technically accurate answers over agreeable ones, and say
               plainly when something is unknown or uncertain rather than
-              guessing. Be concise: responses are metered against a per-user
-              token budget.
+              guessing. Be concise: you run on CPU, so every token costs the
+              user real waiting time.

@@ -1,36 +1,43 @@
+# Zitadel OIDC client for the LLM stack.
+#
+# NOTE ON THE NAME: this resource is still called `agentgateway` because
+# renaming it would delete and recreate the Zitadel app — and this Flux
+# Kustomization runs with prune: false, so the old app would be orphaned live in
+# Zitadel rather than cleaned up. The consumer is now Open WebUI
+# (clusters/production/agentgateway/open-webui.yaml), which is what actually
+# performs the login; agentgateway itself no longer authenticates anything.
+#
+# WHY THE APP TYPE IS NOT CHANGING: appType is IMMUTABLE in Zitadel. The
+# existing WEB + BASIC pairing is a confidential client with a client_secret,
+# which is exactly what Open WebUI's server-side authorization_code flow needs,
+# so nothing here has to be recreated. Do not "tidy" this into a NATIVE/PKCE
+# app — that is a delete-and-recreate, and the client_id/secret would change
+# underneath the running Deployment.
+#
+# Zitadel's provider does NOT accept OIDC_GRANT_TYPE_CLIENT_CREDENTIALS as a
+# grant type value (it is not in the schema's enum); machine-to-machine access
+# is a separate Zitadel concept. authorization_code + refresh_token is all a
+# browser login needs.
+---
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
 metadata:
   name: agentgateway
 spec:
   forProvider:
-    # THE TWO SETTINGS THAT MATTER, and why:
-    #
-    # accessTokenType: OIDC_TOKEN_TYPE_JWT — every other Oidc app in this repo
-    #   and in argus uses OIDC_TOKEN_TYPE_BEARER, which issues an OPAQUE token.
-    #   An opaque token carries no claims and cannot be validated against a
-    #   JWKS; it only works via introspection. agentgateway's jwtAuthentication
-    #   verifies signatures against
-    #   https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys, so it needs a real
-    #   JWT. Change this and the LLM gateway rejects every request.
-    #
-    # accessTokenRoleAssertion: true — the argus-owned `groupsClaim` Zitadel
-    #   Action flattens the user's project role grants into a `groups` claim,
-    #   but only for tokens where role assertion is on. That claim is what
-    #   policy-gateway.yaml keys the budget tier off (rpcu-admin /
-    #   public-admin / public-user). Without it every caller silently falls
-    #   through to the smallest tier.
+    # Role assertion is the load-bearing setting. The argus-owned `groupsClaim`
+    # Zitadel Action flattens the user's project role grants into a `groups`
+    # claim, but only for tokens that have assertion enabled. Open WebUI reads
+    # that claim via OAUTH_ROLES_CLAIM=groups to decide who is an admin
+    # (rpcu-admin / public-admin) and who may log in at all. Turn these off and
+    # every user silently lands on the default role.
     accessTokenRoleAssertion: true
     accessTokenType: OIDC_TOKEN_TYPE_JWT
     idTokenRoleAssertion: true
     idTokenUserinfoAssertion: true
 
-    # Supports two flows:
-    #   1. PKCE (authorization_code) — human users authenticate via browser,
-    #      get a JWT, paste it into opencode /connect.
-    #   2. Client credentials — machine callers exchange client_id + client_secret
-    #      for a JWT at the token endpoint (no browser needed).
-    # Both produce JWTs validated by agentgateway against the Zitadel JWKS.
+    # Confidential server-side client: Open WebUI exchanges the code for tokens
+    # from its pod, never from the browser.
     appType: OIDC_APP_TYPE_WEB
     authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
     grantTypes:
@@ -38,8 +45,15 @@ spec:
       - OIDC_GRANT_TYPE_REFRESH_TOKEN
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
+
+    # Open WebUI registers its OIDC callback on BOTH of these paths and picks
+    # between them by route-registration order, which is an implementation
+    # detail that could change on upgrade. Registering both here costs nothing
+    # and removes the question. `oidc` is the literal provider slug for a
+    # generic OIDC provider — it is not a placeholder for a name.
     redirectUris:
-      - http://localhost:8085/callback
+      - https://chat.rpcu.io/oauth/oidc/callback
+      - https://chat.rpcu.io/oauth/oidc/login/callback
     postLogoutRedirectUris:
       - "*"
     additionalOrigins: []
@@ -50,10 +64,9 @@ spec:
     version: OIDC_VERSION_1_0
     orgId: "369994019545117645"
     projectId: "370001231734928333" # administration
-  # Confidential client: the connection secret carries both client_id and
-  # client_secret. The secret is used for client_credentials (machine access)
-  # and can also be used for PKCE token exchange. Backed up to Vault via
-  # pushsecret-oidc.yaml so it survives cluster rebuilds.
+  # Landing this in agentgateway-system puts client_id/client_secret in the same
+  # namespace as the Open WebUI Deployment, which reads them directly as env
+  # vars via secretKeyRef — no copying, no PushSecret round-trip needed.
   writeConnectionSecretToRef:
     name: agentgateway-oidc
     namespace: agentgateway-system

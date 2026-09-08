@@ -162,6 +162,17 @@
       pinDigests: true,
     },
 
+    // Ollama ships release candidates to the same tag stream as stable
+    // (0.34.0-rc0, 0.34.0-rc1, ... alongside 0.33.3). This is the CPU inference
+    // backend for the LLM stack, so it should only ever move between stable
+    // releases.
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ollama/ollama"],
+      ignoreUnstable: true,
+      allowedVersions: "!/-rc[0-9]+$/",
+    },
+
     // Pin all remaining container image digests so an updated tag is
     // reproducible.
     {

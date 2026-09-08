@@ -1,27 +1,28 @@
-# Model -> provider routing, on the agentgateway proxy itself.
+# Routing on the agentgateway proxy itself.
 #
-# This is content-based routing: policy-prerouting.yaml lifts the "model" field
-# out of the JSON request body into an x-model header BEFORE route selection,
-# and the rules below match on that header. So a caller picks its provider
-# implicitly, just by naming a model, over a single endpoint.
+# There is exactly one backend now, so this is a catch-all and nothing more.
 #
-# ADDING A PROVIDER = one more rule here, e.g.:
+# The previous version matched an `x-model` header that a PreRouting policy
+# lifted out of the JSON body, so that a caller picked its provider implicitly
+# just by naming a model. That machinery only earns its keep with two or more
+# providers; with a single Ollama behind it, it added a failure mode (an
+# unrecognised model 404'd at the gateway) and nothing else. policy-prerouting
+# .yaml was deleted along with it.
+#
+# BRINGING IT BACK when a second provider appears means re-adding the PreRouting
+# policy and putting the specific header match ABOVE this rule — Gateway API
+# picks the more specific match, so a catch-all can safely stay last:
 #
 #   - matches:
 #       - path: {type: PathPrefix, value: /}
 #         headers:
-#           - {type: RegularExpression, name: x-model, value: "^gpt-.*"}
+#           - {type: RegularExpression, name: x-model, value: "^claude-.*"}
 #     backendRefs:
-#       - {name: openai, group: agentgateway.dev, kind: AgentgatewayBackend}
+#       - {name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend}
 #
-# There is NO catch-all rule, on purpose. An unknown model gets a 404 from the
-# gateway instead of being forwarded to Anthropic, which would fail deep in the
-# provider with a confusing error and still burn a request. 404 says exactly
-# what is wrong: no provider is configured for that model.
-#
-# Rule precedence here is Gateway API's, not file order: the longer path prefix
-# (/v1/models) wins for discovery calls, and the header-matching rule handles
-# everything that carries a model in its body.
+# This route is only reachable from inside the cluster. The Gateway is ClusterIP
+# and, since authentication moved to Open WebUI, there is deliberately no public
+# HTTPRoute pointing at it.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -34,27 +35,11 @@ spec:
       namespace: agentgateway-system
       sectionName: http
   rules:
-    # Anthropic: any model named claude-*, on either API dialect
-    # (/v1/messages or /v1/chat/completions).
     - matches:
         - path:
             type: PathPrefix
             value: /
-          headers:
-            - type: RegularExpression
-              name: x-model
-              value: "^claude-.*"
       backendRefs:
-        - name: anthropic
-          group: agentgateway.dev
-          kind: AgentgatewayBackend
-    # Model discovery / client capability probes. These carry no model in the
-    # body, so they cannot be routed by x-model.
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /v1/models
-      backendRefs:
-        - name: anthropic
+        - name: ollama
           group: agentgateway.dev
           kind: AgentgatewayBackend

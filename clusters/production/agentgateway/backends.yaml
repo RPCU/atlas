@@ -1,42 +1,54 @@
-# LLM providers. One AgentgatewayBackend per provider (or per credential — a
-# Claude subscription/seat and a pay-as-you-go API key would be two backends).
+# The LLM backend. One AgentgatewayBackend per provider.
 #
-# ADDING A PROVIDER is deliberately three small edits and nothing else:
-#   1. a Secret here-alike in secrets.yaml (Vault path + ExternalSecret)
-#   2. an AgentgatewayBackend in this file
-#   3. one rule in httproute.yaml matching that provider's model prefix
-# No client change, no new hostname, no new certificate.
+# This used to be Anthropic over a paid API key. It is now the in-cluster Ollama
+# from ollama.yaml, which changes two things worth knowing:
+#   - there is no credential, so there is no `policies.auth` and no Vault path
+#   - there is no per-token cost, so the budgets downstream exist to protect CPU,
+#     not a bill
 #
-# NOTE: provider.anthropic is intentionally left empty ({}). Setting
-# `model:` there would PIN every request to one model and silently ignore what
-# the caller asked for, which defeats "many models through one endpoint". With
-# it unset the model is taken from the request body, and the HTTPRoute decides
-# which provider that model belongs to.
+# `custom` is the provider type for a self-hosted, non-managed endpoint: the
+# target and the API shapes are declared explicitly instead of being inferred
+# from a managed provider name. `backendRef` may only point at a Service in THIS
+# namespace, which is why ollama lives in agentgateway-system rather than in an
+# app namespace of its own.
 #
-# policies.ai.routes maps URL path suffixes (ends-with match) to the API shape
-# agentgateway should parse. Both API dialects are served on the same host:
-#   /v1/messages              -> Anthropic native (Claude Code, Anthropic SDK)
-#   /v1/chat/completions      -> OpenAI-compatible (LangChain, OpenAI SDK, etc.)
-# Serving both is what lets a future OpenAI/Gemini backend sit behind the exact
-# same client configuration.
+# No `model:` is pinned anywhere. The model name is taken from the request body
+# and passed through to Ollama, so pulling a second model into the PVC is enough
+# to make it selectable in Open WebUI — no manifest change here.
+#
+# ADDING A REAL PROVIDER LATER is still the same three edits it always was:
+# a Secret, another AgentgatewayBackend, and a matching rule in httproute.yaml.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
-  name: anthropic
+  name: ollama
   namespace: agentgateway-system
 spec:
   ai:
     provider:
-      anthropic: {}
+      custom:
+        backendRef:
+          name: ollama
+          port: 11434
+        # Ollama's OpenAI-compatible surface. These are the upstream paths
+        # agentgateway rewrites to; they are NOT the paths clients call.
+        formats:
+          - type: Completions
+            path: /v1/chat/completions
+          - type: Embeddings
+            path: /v1/embeddings
+        # Labels telemetry and cost-catalog lookups as "ollama" instead of the
+        # default "custom", so the metrics stay readable if a second self-hosted
+        # provider ever lands here.
+        providerOverride: ollama
   policies:
-    auth:
-      secretRef:
-        name: anthropic-credentials
     ai:
+      # Keys are URL path suffixes (ends-with), matched against what the CLIENT
+      # asked for. `*` is the catch-all: Open WebUI probes /v1/models to
+      # enumerate what it can offer, and Passthrough hands that straight to
+      # Ollama, which answers it natively.
       routes:
-        "/v1/messages": "Messages"
-        "/v1/messages/count_tokens": "AnthropicTokenCount"
         "/v1/chat/completions": "Completions"
-        "/v1/models": "Models"
+        "/v1/embeddings": "Embeddings"
         "*": "Passthrough"
