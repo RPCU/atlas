@@ -4,15 +4,23 @@
 # available as CRD policy fields. OIDC and JWT auth are configured via
 # rawConfig in gateway.yaml (see that file for the full auth stack).
 #
-# Evaluation order: rawConfig OIDC/JWT runs first (gateway-level), then
-# these CRD policies (authorization, rateLimit, transformation).
+# Evaluation order: rawConfig policies (OIDC, JWT) run first (gateway-level),
+# then these CRD policies (authorization, rateLimit).
+#
+# IMPORTANT: rawConfig.policies and CRD policies are all merged into the
+# config's `policies` array. If two policies target the same Gateway with
+# the same phase, the last one in the array wins. The rawConfig policies
+# use names `llm-oidc` and `llm-jwt`, while this CRD policy is `llm` —
+# different names, so they coexist. The rawConfig policies are injected
+# AFTER CRD policies in the merge, so they run later in evaluation order.
 #
 # Everything that targets this Gateway in the default (PostRouting) phase
-# lives in ONE policy on purpose. When two AgentgatewayPolicy resources target
-# the same Gateway, one silently overwrites the other based on creation order
-# — both still report ACCEPTED/ATTACHED, so the failure is invisible. The only
-# other policies that touch this Gateway are policy-claude-code.yaml and
-# policy-prompt.yaml (both target the HTTPRoute, not the Gateway).
+# lives in ONE CRD policy on purpose. When two AgentgatewayPolicy resources
+# target the same Gateway, one silently overwrites the other based on
+# creation order — both still report ACCEPTED/ATTACHED, so the failure is
+# invisible. The only other policies that touch this Gateway are
+# policy-claude-code.yaml and policy-prompt.yaml (both target the HTTPRoute,
+# not the Gateway).
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy

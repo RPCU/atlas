@@ -48,35 +48,45 @@ spec:
       memory: 512Mi
   # OIDC + JWT auth are configured via rawConfig because the CRD doesn't expose
   # them as policy fields. rawConfig is merged into the proxy's upstream config
-  # alongside CRD-generated config.
+  # file alongside CRD-generated config.
+  #
+  # IMPORTANT: the Kubernetes proxy config only accepts these top-level keys:
+  #   config, binds, frontendPolicies, policies, workloads, services, backends
+  # The standalone keys (gateways, ui, routes, llm, mcp) are NOT valid here —
+  # the controller generates those from Gateway API resources. So OIDC, JWT,
+  # and authorization go into the `policies` array as LocalPolicy items
+  # targeting the llm Gateway.
   rawConfig:
-    # --- Built-in chat UI authentication ---
-    ui:
-      gateways: [llm]
-      policies:
-        oidc:
-          issuer: https://rpcu-gabeck.eu1.zitadel.cloud
-          clientId: $AGW_OIDC_CLIENT_ID
-          clientSecret: $AGW_OIDC_CLIENT_SECRET
-          redirectURI: https://chat.rpcu.io/oauth/callback
-          scopes:
-            - openid
-            - profile
-            - email
-        authorization:
-          rules:
-            - allow: '["rpcu-admin", "public-admin", "public-user"].exists(g, g in jwt.groups)'
-    # --- Gateway-level JWT auth (for API calls too) ---
-    gateways:
-      llm:
-        jwtAuthentication:
-          mode: Strict
-          providers:
-            - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
-              jwks:
-                remote:
-                  url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
-                  cacheDuration: 1h
+    policies:
+      # --- Built-in chat UI OIDC browser authentication ---
+      - name: llm-oidc
+        target:
+          gateway: llm
+        phase: gateway
+        policy:
+          oidc:
+            issuer: https://rpcu-gabeck.eu1.zitadel.cloud
+            clientId: $AGW_OIDC_CLIENT_ID
+            clientSecret: $AGW_OIDC_CLIENT_SECRET
+            redirectURI: https://chat.rpcu.io/oauth/callback
+            scopes:
+              - openid
+              - profile
+              - email
+      # --- Gateway-level JWT auth (for API calls too) ---
+      - name: llm-jwt
+        target:
+          gateway: llm
+        phase: gateway
+        policy:
+          jwtAuth:
+            mode: Strict
+            providers:
+              - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
+                jwks:
+                  remote:
+                    url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
+                    cacheDuration: 1h
   # OIDC secrets: client_id/client_secret from the Crossplane Oidc app's
   # connection secret, cookie encryption key generated out of band.
   env:
