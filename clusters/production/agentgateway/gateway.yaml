@@ -14,7 +14,8 @@
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
 #            -> open-webui  (Zitadel OIDC login)
 #            -> Service llm:80 (this proxy, ClusterIP)
-#            -> AgentgatewayBackend -> ollama:11434 (in-cluster, CPU)
+#            -> AgentgatewayBackend anthropic -> api.anthropic.com
+#               (Claude credential injected here — see backends.yaml)
 #
 # allowedRoutes is "Same" for the same reason: widening it would let any
 # namespace in the cluster attach a route to an unauthenticated LLM endpoint.

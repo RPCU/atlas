@@ -32,17 +32,20 @@ spec:
       kind: Gateway
       name: llm
   traffic:
-    # ---- Global throughput ceiling --------------------------------------
-    # A single flat counter for the whole gateway, not a per-user or per-group
-    # budget. The per-identity tiers that used to live here were keyed off
-    # `jwt.sub` and `jwt.groups`; with authentication gone there is no identity
-    # at this layer to key on, and a descriptor whose CEL expression fails is
-    # silently SKIPPED — it would have enforced nothing at all.
+    # ---- Global spend ceiling -------------------------------------------
+    # A single flat token counter for the whole gateway, not a per-user or
+    # per-group budget. The per-identity tiers that used to live here were keyed
+    # off `jwt.sub` and `jwt.groups`; authentication now lives in Open WebUI, so
+    # the gateway sees no identity at this layer to key on, and a descriptor
+    # whose CEL expression fails is silently SKIPPED — it would have enforced
+    # nothing at all.
     #
-    # What this protects is CPU, not money: inference is local now, so the
-    # failure mode is a busy-loop client starving the two workers, not a bill.
-    # Per-user fairness, if it is ever wanted, belongs in Open WebUI where the
-    # user is actually known.
+    # With the Anthropic backend restored this is a MONEY ceiling again, not
+    # just a CPU guardrail: every token here bills against the shared Anthropic
+    # credential (a subscription seat or a pay-as-you-go key). Per-user fairness,
+    # if it is ever wanted, belongs in Open WebUI where the user is known — or
+    # re-add jwtAuthentication + tiered descriptors here (see git history of this
+    # file for the pre-pivot version).
     rateLimit:
       global:
         domain: agentgateway

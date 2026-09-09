@@ -2,9 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: agentgateway-system
 resources:
-  # Inference backend
-  - ollama.yaml
   # LLM gateway (internal, unauthenticated — see policy-gateway.yaml)
+  # Anthropic backend + its Vault-backed credential.
+  - secrets.yaml
   - gateway.yaml
   - backends.yaml
   - httproute.yaml

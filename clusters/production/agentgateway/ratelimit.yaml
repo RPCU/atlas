@@ -41,10 +41,12 @@ spec:
 # caller to key on. Authentication now happens in Open WebUI, so the gateway
 # sees no identity and there is nothing to tier by.
 #
-# The number is a CPU guardrail, not a cost control: inference is local, so
-# 20M tokens/day is set well above what two CPU workers can physically generate.
-# It exists to stop a runaway client from pinning the node indefinitely, and
-# should be lowered only if that actually happens.
+# The number is a COST ceiling now that the backend is Anthropic: every token
+# bills against the shared credential. 2M tokens/day is a deliberately modest
+# cap for a handful of users on one subscription seat / key — raise it if
+# legitimate use hits the limit, lower it if the bill (or a subscription's fair-
+# use limit) says so. Counters reset on Dragonfly restart (see note above), so
+# a restart temporarily removes the ceiling for the current window.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -58,7 +60,7 @@ data:
         value: all
         rate_limit:
           unit: day
-          requests_per_unit: 20000000
+          requests_per_unit: 2000000
 ---
 apiVersion: apps/v1
 kind: Deployment

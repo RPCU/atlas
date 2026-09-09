@@ -1,28 +1,27 @@
 # Routing on the agentgateway proxy itself.
 #
-# There is exactly one backend now, so this is a catch-all and nothing more.
+# There is exactly one backend (anthropic), so this is a catch-all: every path
+# on the internal `llm` Gateway goes to the Anthropic backend, which decides
+# how to parse it from backends.yaml's `routes` map (/v1/chat/completions from
+# Open WebUI -> Completions -> converted to Anthropic /v1/messages).
 #
-# The previous version matched an `x-model` header that a PreRouting policy
-# lifted out of the JSON body, so that a caller picked its provider implicitly
-# just by naming a model. That machinery only earns its keep with two or more
-# providers; with a single Ollama behind it, it added a failure mode (an
-# unrecognised model 404'd at the gateway) and nothing else. policy-prerouting
-# .yaml was deleted along with it.
+# This route is only reachable from inside the cluster. The `llm` Gateway is
+# ClusterIP and, since authentication lives in Open WebUI (chat.rpcu.io), there
+# is deliberately NO public HTTPRoute pointing at it. Adding one would put an
+# unauthenticated, credential-injecting LLM endpoint on the internet — re-add
+# jwtAuthentication to policy-gateway.yaml first if you ever need that.
 #
-# BRINGING IT BACK when a second provider appears means re-adding the PreRouting
-# policy and putting the specific header match ABOVE this rule — Gateway API
-# picks the more specific match, so a catch-all can safely stay last:
+# ADDING A SECOND PROVIDER later means re-introducing content-based routing:
+# a PreRouting AgentgatewayPolicy that lifts `model` out of the JSON body into
+# an x-model header, then a specific header match ABOVE this catch-all (Gateway
+# API picks the more specific match, so the catch-all can stay last):
 #
 #   - matches:
 #       - path: {type: PathPrefix, value: /}
 #         headers:
-#           - {type: RegularExpression, name: x-model, value: "^claude-.*"}
+#           - {type: RegularExpression, name: x-model, value: "^gpt-.*"}
 #     backendRefs:
-#       - {name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend}
-#
-# This route is only reachable from inside the cluster. The Gateway is ClusterIP
-# and, since authentication moved to Open WebUI, there is deliberately no public
-# HTTPRoute pointing at it.
+#       - {name: openai, group: agentgateway.dev, kind: AgentgatewayBackend}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -40,6 +39,6 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: ollama
+        - name: anthropic
           group: agentgateway.dev
           kind: AgentgatewayBackend

@@ -1,23 +1,32 @@
-# Prompt enrichment: system prompts that every request gets, managed centrally
-# instead of being copy-pasted into each client.
+# Prompt enrichment: a house system prompt prepended to every request.
 #
-# `prepend` inserts these messages BEFORE the caller's own messages, so a client
-# that sends its own system prompt still gets it — both are present, ours first.
-# Use `append` instead for instructions that should win over the caller's.
+# `prepend` inserts these messages BEFORE the caller's own, so a client that
+# sends its own system prompt still gets it — both are present, ours first.
 #
-# This targets the HTTPRoute rather than the Gateway so the enrichment can later
-# differ per provider or per route (e.g. a stricter preamble on a cheap model)
-# without touching the auth/budget policy.
+# ---- THIS IS ALSO THE THIRD LEG OF THE CLAUDE-SUBSCRIPTION SPOOF ------------
+# A Claude Pro/Max subscription token (sk-ant-oat*) is only accepted by Anthropic
+# for Sonnet/Opus when the request looks like it came from the Claude Code CLI
+# (agentgateway issue #2297). Two of the three tells are HTTP headers, set in
+# backends.yaml (anthropic-beta / user-agent / x-app). The THIRD is that the
+# FIRST system message must be EXACTLY:
 #
-# Constraint from the API: prompt enrichment only applies to route types that
-# agentgateway parses as chat, which is why backends.yaml maps
-# /v1/chat/completions -> Completions. The `*` -> Passthrough catch-all in that
-# same file is opaque to the gateway and cannot be enriched — so a client that
-# calls some other path gets no system prompt at all.
+#     "You are Claude Code, Anthropic's official CLI for Claude."
 #
-# THIS IS THE CUSTOMIZATION POINT — edit the content below to taste. Keep it
-# short: every token here is prepended to every request, and on CPU inference
-# every extra token in the prompt is time the user waits.
+# That is why the first `prepend` entry below is that string verbatim and MUST
+# stay first and unchanged. Anthropic string-matches it; reword it and Sonnet/
+# Opus start returning 401/403 under a subscription token (a plain sk-ant-api
+# key does not care, so this stays correct for both credential types). Put any
+# house instructions in the SECOND entry, never ahead of the identity line.
+#
+# Constraint from the API: prompt enrichment only applies to route types the
+# gateway parses as chat, which is why backends.yaml maps /v1/chat/completions
+# -> Completions and /v1/messages -> Messages. A `*` -> Passthrough route is
+# opaque and cannot be enriched — so a subscription token used over a
+# Passthrough path would NOT get the identity message and would fail. Open WebUI
+# uses /v1/chat/completions, so it is enriched.
+#
+# This targets the HTTPRoute rather than the Gateway so enrichment can later
+# differ per route without touching the auth/budget policy.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -33,9 +42,13 @@ spec:
     ai:
       prompt:
         prepend:
+          # MUST be first and verbatim — Claude Code identity for sk-ant-oat.
+          - role: system
+            content: "You are Claude Code, Anthropic's official CLI for Claude."
+          # House instructions. Safe to edit; keep it after the identity line.
           - role: system
             content: >-
-              You are a concise assistant. Answer directly in the fewest words
-              needed. Give the answer first; skip preamble, restating the
-              question, and step-by-step reasoning unless asked. If you don't
-              know, say so in one sentence. Be accurate, not agreeable.
+              You are accessed through the RPCU shared LLM gateway. Prefer
+              precise, technically accurate answers over agreeable ones, and say
+              plainly when something is unknown or uncertain rather than
+              guessing.
