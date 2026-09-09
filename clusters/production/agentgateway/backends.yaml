@@ -50,10 +50,10 @@ metadata:
 spec:
   ai:
     provider:
-      anthropic: {}
+      anthropic:
         # Cheapest / least-token-consuming current Claude model. Pinning it here
         # overrides the client's requested model. See the note above.
-        # model: claude-haiku-4-5
+        model: claude-opus-4-8
   policies:
     auth:
       secretRef:
