@@ -62,6 +62,6 @@ spec:
       routes:
         '/v1/messages': 'Messages'
         # '/v1/messages/count_tokens': 'AnthropicTokenCount'
-        # '/v1/chat/completions': 'Completions'
+        '/v1/chat/completions': 'Completions'
         # '/v1/models': 'Models'
         '*': 'Passthrough'
