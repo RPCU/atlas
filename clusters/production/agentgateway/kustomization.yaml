@@ -9,7 +9,6 @@ resources:
   - gateway.yaml
   - backends.yaml
   - httproute.yaml
-  - policy-gateway.yaml
   - policy-claude-code.yaml
   - policy-prompt.yaml
   - ratelimit.yaml

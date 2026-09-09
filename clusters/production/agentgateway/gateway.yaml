@@ -47,15 +47,15 @@ spec:
       memory: 128Mi
     limits:
       memory: 512Mi
-  # JWT auth is configured via rawConfig because the CRD doesn't expose
-  # it as a policy field (jwks.remote.url not in CRD v2.2.1). rawConfig is
-  # merged into the proxy's upstream config file alongside CRD-generated config.
+  # JWT auth + authorization + rateLimit are configured via rawConfig because
+  # the CRD doesn't expose them with the right schema (jwks.remote.url not in
+  # CRD v2.2.1, and rawConfig.policies replaces the CRD-generated policies
+  # array). rawConfig is merged into the proxy's upstream config file.
   #
   # IMPORTANT: the Kubernetes proxy config only accepts these top-level keys:
   #   config, binds, frontendPolicies, policies, workloads, services, backends
   # The standalone keys (gateways, ui, routes, llm, mcp) are NOT valid here —
-  # the controller generates those from Gateway API resources. So JWT auth goes
-  # into the `policies` array as a LocalPolicy item targeting the llm Gateway.
+  # the controller generates those from Gateway API resources.
   #
   # NOTE: OIDC browser auth (oidc field) is NOT available in rawConfig.policies
   # on proxy v0.12.0 — the FilterOrPolicy schema in this version does not
@@ -64,7 +64,7 @@ spec:
   # network isolation (ClusterIP, allowedRoutes: Same) instead.
   rawConfig:
     policies:
-      # --- Gateway-level JWT auth (for API calls too) ---
+      # --- JWT auth (gateway-level, runs first) ---
       - name:
           name: llm-jwt
           namespace: agentgateway-system
@@ -80,6 +80,44 @@ spec:
               - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
                 jwks:
                   url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
+      # --- Authorization + rate limits (PostRouting, runs after route selection) ---
+      # A signature-valid JWT is not enough: the caller must actually hold one
+      # of the org's roles. Every registered user is auto-granted `public-user`
+      # by the argus `addUserGrant` Action, so in practice this admits every
+      # real user while rejecting tokens minted for unrelated apps.
+      #
+      # Token budgets: unit=tokens means the cost debited per request is the LLM
+      # token count (input + output), not 1. Two independent descriptors:
+      #   1. [group, user_id] — each user's own budget, sized by their group.
+      #   2. [group_total]    — a ceiling for the whole group combined.
+      - name:
+          name: llm-authz-ratelimit
+          namespace: agentgateway-system
+        target:
+          gateway:
+            gatewayName: llm
+            gatewayNamespace: agentgateway-system
+        phase: route
+        policy:
+          authorization:
+            rules:
+              - allow: '["rpcu-admin", "public-admin", "public-user"].exists(g, g in default(jwt.groups, []))'
+          remoteRateLimit:
+            domain: agentgateway
+            service:
+              name: ratelimit
+              port: 8081
+            descriptors:
+              - entries:
+                  - key: group
+                    value: '"rpcu-admin" in default(jwt.groups, []) ? "rpcu-admin" : ("public-admin" in default(jwt.groups, []) ? "public-admin" : "public-user")'
+                  - key: user_id
+                    value: 'default(jwt.sub, "unknown")'
+                type: tokens
+              - entries:
+                  - key: group_total
+                    value: '"rpcu-admin" in default(jwt.groups, []) ? "rpcu-admin" : ("public-admin" in default(jwt.groups, []) ? "public-admin" : "public-user")'
+                type: tokens
   # JWT secret: client_id/client_secret from the Crossplane Oidc app's
   # connection secret (kept for potential future use; not consumed by rawConfig
   # since OIDC browser auth is not available on proxy v0.12.0).
