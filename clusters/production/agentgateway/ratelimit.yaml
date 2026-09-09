@@ -36,10 +36,9 @@ spec:
 # Keys must match the descriptor entry `name`s in policy-gateway.yaml exactly
 # (case-sensitive), and `domain` must match the policy's `domain`.
 #
-# Nested descriptors give "per user, at a limit that depends on their group":
-# the outer key selects the tier, the inner user_id key gets its own counter per
-# distinct value. The flat group_total descriptors are the separate whole-group
-# ceiling.
+# Simple global rate limit: a single shared budget for all users. No per-user
+# or per-group breakdown — Open WebUI handles auth and can enforce its own
+# per-user quotas if needed.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -49,45 +48,11 @@ data:
   config.yaml: |
     domain: agentgateway
     descriptors:
-      # ---- Per-user daily token budget, tiered by Zitadel group ----
-      - key: group
-        value: rpcu-admin
-        descriptors:
-          - key: user_id
-            rate_limit:
-              unit: day
-              requests_per_unit: 5000000
-      - key: group
-        value: public-admin
-        descriptors:
-          - key: user_id
-            rate_limit:
-              unit: day
-              requests_per_unit: 1000000
-      - key: group
-        value: public-user
-        descriptors:
-          - key: user_id
-            rate_limit:
-              unit: day
-              requests_per_unit: 100000
-
-      # ---- Whole-group daily ceiling ----
-      - key: group_total
-        value: rpcu-admin
+      # Single global daily token budget for all users combined.
+      - key: global
         rate_limit:
           unit: day
           requests_per_unit: 20000000
-      - key: group_total
-        value: public-admin
-        rate_limit:
-          unit: day
-          requests_per_unit: 5000000
-      - key: group_total
-        value: public-user
-        rate_limit:
-          unit: day
-          requests_per_unit: 1000000
 ---
 apiVersion: apps/v1
 kind: Deployment

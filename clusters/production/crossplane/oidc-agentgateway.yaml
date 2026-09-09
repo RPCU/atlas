@@ -1,26 +1,23 @@
-# Zitadel OIDC client for the LLM stack's chat UI, consumed by oauth2-proxy.
+# Zitadel OIDC client for the LLM stack's chat UI, consumed by Open WebUI.
 #
-# agentgateway's native OIDC browser login is standalone-only (no traffic.oidc
-# in the Kubernetes controller path), so the OIDC flow is handled by oauth2-proxy
-# in front of chat.rpcu.io (clusters/production/agentgateway/oauth2-proxy/), same
-# pattern as radarr/prowlarr. The flow:
-#   browser -> chat.rpcu.io -> oauth2-proxy (no session) -> redirect to Zitadel
-#   -> user authenticates -> Zitadel redirects to /oauth2/callback
-#   -> oauth2-proxy exchanges code -> session cookie set -> forwards to llm:15000
-#      with the access token as `Authorization: Bearer <jwt>`
+# Open WebUI handles the OIDC browser login (redirect/cookie/session) itself —
+# no oauth2-proxy, no native agentgateway OIDC. The flow:
+#   browser -> chat.rpcu.io -> Open WebUI (no session) -> redirect to Zitadel
+#   -> user authenticates -> Zitadel redirects to /oauth/oidc/callback
+#   -> Open WebUI exchanges code -> session cookie set
+#   -> Open WebUI proxies LLM calls to llm:80 (no auth downstream)
 #
 # appType is IMMUTABLE in Zitadel. The existing WEB + BASIC pairing is a
-# confidential client with a client_secret, which is what oauth2-proxy's
+# confidential client with a client_secret, which is what Open WebUI's
 # server-side authorization_code flow needs. Do not change it.
 #
 # accessTokenType: OIDC_TOKEN_TYPE_JWT is load-bearing: it makes the access token
-# a verifiable JWT, so the llm Gateway's jwtAuthentication policy can validate it
-# and read jwt.groups / jwt.sub. accessTokenRoleAssertion + idTokenRoleAssertion
-# are also load-bearing: the argus-owned `groupsClaim` Zitadel Action flattens
-# project role grants into a `groups` claim, but only for tokens with assertion
-# enabled. The llm Gateway uses that claim for group authorization + per-group
-# rate limit tiering. Turn these off and every user falls through to the
-# smallest tier (or fails authorization entirely).
+# a verifiable JWT. ENABLE_OAUTH_ROLE_MANAGEMENT + OAUTH_ROLES_CLAIM=groups in
+# Open WebUI read the `groups` claim from this token for role mapping.
+# accessTokenRoleAssertion + idTokenRoleAssertion are also load-bearing: the
+# argus-owned `groupsClaim` Zitadel Action flattens project role grants into a
+# `groups` claim, but only for tokens with assertion enabled. Turn these off
+# and every user lands on the default role regardless of their grants.
 ---
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
@@ -41,9 +38,9 @@ spec:
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
 
-    # oauth2-proxy's redirect_url must match one of these exactly.
+    # Open WebUI's OIDC callback path.
     redirectUris:
-      - https://chat.rpcu.io/oauth2/callback
+      - https://chat.rpcu.io/oauth/oidc/callback
     postLogoutRedirectUris:
       - "*"
     additionalOrigins: []
@@ -54,7 +51,7 @@ spec:
     version: OIDC_VERSION_1_0
     orgId: "369994019545117645"
     projectId: "370001231734928333" # administration
-  # Connection secret lands in agentgateway-system where oauth2-proxy reads the
+  # Connection secret lands in agentgateway-system where Open WebUI reads the
   # client_id / client_secret (attribute.client_id / attribute.client_secret).
   writeConnectionSecretToRef:
     name: agentgateway-oidc

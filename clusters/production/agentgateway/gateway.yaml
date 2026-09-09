@@ -1,40 +1,19 @@
-# The agentgateway data plane for LLM traffic AND the built-in chat UI.
+# The agentgateway data plane for LLM traffic.
 #
 # This Gateway uses the "agentgateway" GatewayClass (installed by
 # infrastructure/agentgateway), NOT "kgateway". The agentgateway controller's
 # deployer watches it and provisions a matching proxy Deployment + Service, both
 # named "llm", in this namespace.
 #
-# The Service exposes two ports:
-#   80     — LLM traffic (OpenAI-compatible /v1/chat/completions)
-#   15000  — Built-in chat UI (served by the proxy)
-#
-# Traffic path (THREE hops — see chat-httproute.yaml + oauth2-proxy/):
+# Traffic path:
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
-#            -> chat.rpcu.io HTTPRoute -> chat-oauth2-proxy:80
-#            -> oauth2-proxy (Zitadel OIDC browser login; pass_access_token)
-#            -> llm:15000 (built-in chat UI) with Authorization: Bearer <token>
-#            -> llm Gateway CRD policies (policy-gateway.yaml):
-#                 jwtAuthentication (Zitadel JWKS) -> authorization (group Allow)
-#                 -> rateLimit.global (per-group token budgets)
+#            -> chat.rpcu.io HTTPRoute -> open-webui:8080
+#            -> Open WebUI (Zitadel OIDC browser login, serves chat UI)
+#            -> llm:80 (LLM API proxy, global rate limiting)
 #            -> AgentgatewayBackend anthropic -> api.anthropic.com
 #
-# ⚠️ WHY oauth2-proxy AND NOT native OIDC on the Gateway:
-# OIDC browser auth (the redirect/login/cookie flow) is a STANDALONE-mode-only
-# feature of agentgateway. It does NOT exist in the Kubernetes controller path:
-# the AgentgatewayPolicy CRD has no `traffic.oidc`, and the proxy's Kubernetes
-# config (rawConfig.policies FilterOrPolicy) has no `oidc` field either — on ANY
-# released chart (2.2.x, 1.x, main). Confirmed against proxy v0.12.0: it rejects
-# `oidc` with "unknown field `oidc`". So the browser login is delegated to
-# oauth2-proxy (same pattern as radarr/prowlarr), and the Gateway only does JWT
-# auth + authorization + rate limiting via the CRD — all of which ARE supported.
-#
-# rawConfig is intentionally OMITTED here. Everything auth-related lives in
-# policy-gateway.yaml as a proper AgentgatewayPolicy CRD. Do not re-add
-# rawConfig.policies for OIDC/JWT/rateLimit — the proxy's Kubernetes config
-# only accepts top-level keys config/binds/frontendPolicies/policies/workloads/
-# services/backends, and hand-rolled `remoteRateLimit`/`oidc` there crash the
-# proxy ("exactly 1 policy", NamespacedHostname, unknown field `oidc`).
+# The llm Gateway has NO auth, NO OIDC, NO per-group rate limiting.
+# Open WebUI handles authentication. The Gateway only does global rate limiting.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayParameters
@@ -54,14 +33,6 @@ spec:
   service:
     spec:
       type: ClusterIP
-      # Add port 15000 for the built-in chat UI alongside the deployer's
-      # default ports (80/443). The deployer creates the Service; this patch
-      # adds the UI port via strategic merge.
-      ports:
-        - name: ui
-          port: 15000
-          targetPort: 15000
-          protocol: TCP
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -78,12 +49,6 @@ spec:
   listeners:
     - name: http
       port: 80
-      protocol: HTTP
-      allowedRoutes:
-        namespaces:
-          from: Same
-    - name: ui
-      port: 15000
       protocol: HTTP
       allowedRoutes:
         namespaces:

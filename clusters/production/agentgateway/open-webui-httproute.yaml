@@ -1,0 +1,56 @@
+# Public entry point: chat.rpcu.io on the shared https-external Gateway.
+# Cloudflare DNS + the Let's Encrypt *.rpcu.io wildcard are handled by the
+# ExternalDNS and cert-manager instances already watching that Gateway, so
+# adding this route is all that is needed to publish the app.
+#
+# This is the ONLY thing in the LLM stack reachable from the internet. The
+# agentgateway proxy behind Open WebUI is ClusterIP with no public route,
+# which is what allows it to run without authentication.
+#
+# ---- TIMEOUTS ----------------------------------------------------------
+# Two unrelated reasons this route needs long timeouts, both of which produce
+# the same symptom (the UI hangs then drops):
+#   1. Open WebUI runs Socket.IO at /ws/socket.io for streaming tokens and
+#      title generation. That connection is idle between messages.
+#   2. LLM inference can be slow. A long answer can easily exceed Envoy's
+#      300s default idle timeout mid-stream.
+# The HTTPRoute timeouts bound the whole request; the kgateway TrafficPolicy
+# raises the per-stream IDLE timeout, which is the one that actually kills
+# quiet websockets. Both are required — neither implies the other.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: open-webui
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "chat.rpcu.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: "1800s"
+        backendRequest: "1800s"
+      backendRefs:
+        - name: open-webui
+          port: 80
+---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: open-webui
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: open-webui
+  timeouts:
+    streamIdle: 1800s
