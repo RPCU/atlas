@@ -55,13 +55,13 @@ spec:
         # overrides the client's requested model. See the note above.
         model: claude-opus-4-8
   policies:
-    auth:
-      secretRef:
-        name: anthropic-credentials
+    # auth:
+    #   secretRef:
+    #     name: anthropic-credentials
     ai:
       routes:
         '/v1/messages': 'Messages'
-        # '/v1/messages/count_tokens': 'AnthropicTokenCount'
-        '/v1/chat/completions': 'Completions'
+        '/v1/messages/count_tokens': 'AnthropicTokenCount'
+        # '/v1/chat/completions': 'Completions'
         # '/v1/models': 'Models'
         '*': 'Passthrough'
