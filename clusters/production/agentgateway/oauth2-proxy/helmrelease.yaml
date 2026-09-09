@@ -40,7 +40,7 @@ spec:
         skip_provider_button = true
         cookie_secure = true
         upstreams = [
-          "http://llm.agentgateway-system.svc.cluster.local:15000"
+          "http://llm.agentgateway-system.svc:15000"
         ]
         redirect_url = "https://chat.rpcu.io/oauth2/callback"
         oidc_issuer_url = "https://rpcu-gabeck.eu1.zitadel.cloud"
