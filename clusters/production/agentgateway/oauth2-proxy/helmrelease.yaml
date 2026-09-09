@@ -10,8 +10,12 @@
 # (policy-gateway.yaml) then verifies (jwtAuthentication) and uses for group
 # authorization + per-group token-budget rate limiting.
 #
-# Upstream is the built-in chat UI on llm:15000. Public exposure + TLS + DNS are
-# handled by the https-external kgateway Gateway (chat-httproute.yaml).
+# Upstream is the llm Gateway proxy on port 80 (NOT port 15000 — the admin/chat
+# UI binds to 127.0.0.1:15000 which is unreachable from outside the pod via
+# Service). The proxy on port 80 is in the same container and CAN reach
+# localhost:15000. The llm Gateway's chat-ui-route HTTPRoute matches the
+# chat.rpcu.io Host header and forwards to llm:15000 (admin). Public exposure +
+# TLS + DNS are handled by the https-external kgateway Gateway (chat-httproute.yaml).
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -40,7 +44,7 @@ spec:
         skip_provider_button = true
         cookie_secure = true
         upstreams = [
-          "http://llm.agentgateway-system.svc:15000"
+          "http://llm.agentgateway-system.svc:80"
         ]
         redirect_url = "https://chat.rpcu.io/oauth2/callback"
         oidc_issuer_url = "https://rpcu-gabeck.eu1.zitadel.cloud"

@@ -17,3 +17,7 @@ resources:
   # Chat frontend: oauth2-proxy (Zitadel OIDC login) + the public HTTPRoute.
   - oauth2-proxy
   - chat-httproute.yaml
+  # Internal route on the llm Gateway: forwards chat.rpcu.io to the admin UI
+  # (127.0.0.1:15000, localhost-only). The llm proxy is in the same container
+  # and CAN reach localhost; an external Service cannot.
+  - chat-ui-route.yaml
