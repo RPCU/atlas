@@ -12,7 +12,8 @@
 # Traffic path:
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
 #            -> Service llm:15000 (this proxy, ClusterIP, built-in UI)
-#            -> Zitadel OIDC browser login (configured in rawConfig ui.policies)
+#            -> JWT auth (Zitadel JWKS, configured in rawConfig)
+#            -> authorization (group-based allow via CRD policy)
 #            -> user sees chat UI, picks model, sends message
 #            -> proxy -> AgentgatewayBackend anthropic -> api.anthropic.com
 #               (Claude credential injected here — see backends.yaml)
@@ -46,37 +47,23 @@ spec:
       memory: 128Mi
     limits:
       memory: 512Mi
-  # OIDC + JWT auth are configured via rawConfig because the CRD doesn't expose
-  # them as policy fields. rawConfig is merged into the proxy's upstream config
-  # file alongside CRD-generated config.
+  # JWT auth is configured via rawConfig because the CRD doesn't expose
+  # it as a policy field (jwks.remote.url not in CRD v2.2.1). rawConfig is
+  # merged into the proxy's upstream config file alongside CRD-generated config.
   #
   # IMPORTANT: the Kubernetes proxy config only accepts these top-level keys:
   #   config, binds, frontendPolicies, policies, workloads, services, backends
   # The standalone keys (gateways, ui, routes, llm, mcp) are NOT valid here —
-  # the controller generates those from Gateway API resources. So OIDC, JWT,
-  # and authorization go into the `policies` array as LocalPolicy items
-  # targeting the llm Gateway.
+  # the controller generates those from Gateway API resources. So JWT auth goes
+  # into the `policies` array as a LocalPolicy item targeting the llm Gateway.
+  #
+  # NOTE: OIDC browser auth (oidc field) is NOT available in rawConfig.policies
+  # on proxy v0.12.0 — the FilterOrPolicy schema in this version does not
+  # include it. OIDC is only available inline on gateway listeners, which the
+  # controller generates. The built-in chat UI is protected by JWT auth +
+  # network isolation (ClusterIP, allowedRoutes: Same) instead.
   rawConfig:
     policies:
-      # --- Built-in chat UI OIDC browser authentication ---
-      - name:
-          name: llm-oidc
-          namespace: agentgateway-system
-        target:
-          gateway:
-            gatewayName: llm
-            gatewayNamespace: agentgateway-system
-        phase: gateway
-        policy:
-          oidc:
-            issuer: https://rpcu-gabeck.eu1.zitadel.cloud
-            clientId: $AGW_OIDC_CLIENT_ID
-            clientSecret: $AGW_OIDC_CLIENT_SECRET
-            redirectURI: https://chat.rpcu.io/oauth/callback
-            scopes:
-              - openid
-              - profile
-              - email
       # --- Gateway-level JWT auth (for API calls too) ---
       - name:
           name: llm-jwt
@@ -95,8 +82,9 @@ spec:
                   remote:
                     url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
                     cacheDuration: 1h
-  # OIDC secrets: client_id/client_secret from the Crossplane Oidc app's
-  # connection secret, cookie encryption key generated out of band.
+  # JWT secret: client_id/client_secret from the Crossplane Oidc app's
+  # connection secret (kept for potential future use; not consumed by rawConfig
+  # since OIDC browser auth is not available on proxy v0.12.0).
   env:
     - name: AGW_OIDC_CLIENT_ID
       valueFrom:

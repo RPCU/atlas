@@ -249,18 +249,16 @@ the `atlas` Flux Kustomization reconciles):
   second Gateway. Keeping it ClusterIP means one public IP, one cert chain and
   one DNS owner for the whole cluster.
 
-  > **⚠️ SECURITY MODEL: OIDC + JWT AUTH + NETWORK ISOLATION.** The `llm` Gateway
-  > serves the built-in chat UI on port 15000 and enforces Zitadel OIDC browser
-  > login (configured in `rawConfig.policies` on the `AgentgatewayParameters`,
-  > not as a CRD policy — `traffic.oidc` does not exist in CRD v2.2.1). After
-  > login, the session JWT is validated by `jwtAuthentication` (also in
-  > `rawConfig.policies`, because the Kubernetes proxy config only accepts
-  > `config`, `binds`, `frontendPolicies`, `policies`, `workloads`, `services`,
-  > `backends` as top-level keys — the standalone `gateways` and `ui` keys are
-  > NOT valid in Kubernetes mode). Group-based authorization and per-group
+  > **⚠️ SECURITY MODEL: JWT AUTH + NETWORK ISOLATION.** The `llm` Gateway
+  > serves the built-in chat UI on port 15000 and enforces Zitadel JWT
+  > authentication (configured in `rawConfig.policies` on the
+  > `AgentgatewayParameters` — `traffic.jwtAuthentication` with
+  > `jwks.remote.url` is not in CRD v2.2.1, and `oidc` browser auth is not
+  > available in `rawConfig.policies` on proxy v0.12.0's `FilterOrPolicy`
+  > schema). After JWT validation, group-based authorization and per-group
   > rate limits run as CRD policies (`policy-gateway.yaml`). The Gateway is
   > ClusterIP with `allowedRoutes.namespaces.from: Same` — only
-  > `chat-httproute.yaml` can reach it.
+  > `chat-httproute.yaml` can reach it. No oauth2-proxy needed.
 
   > **⚠️ CLAUDE SUBSCRIPTION vs API KEY (agentgateway issue #2297).** The Vault
   > path `secrets-production/agentgateway/anthropic` key `apiKey` accepts EITHER:
@@ -283,7 +281,7 @@ the `atlas` Flux Kustomization reconciles):
   - `backends.yaml` - `AgentgatewayBackend` `anthropic`. **`provider.anthropic.model: claude-haiku-4-5`** PINS every request to the cheapest/least-token-consuming current Claude model ($1/$5 per MTok, 200K ctx), **overriding** whatever the chat UI's picker sends — so no user can burn the shared credential on Sonnet/Opus. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `anthropic-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (the UI's OpenAI dialect, converted to Anthropic `/v1/messages`) and `/v1/messages` → Messages (native). Haiku is also lenient about the Claude Code identity spoof, so it is the most robust pin under a subscription token.
   - `httproute.yaml` - A plain **catch-all** → the `anthropic` backend. The old `x-model` header matching (and the PreRouting policy that fed it) was deleted: it only earns its keep with two or more providers. The file documents how to re-add a per-provider rule above the catch-all.
   - `policy-claude-code.yaml` - `AgentgatewayPolicy` `llm-claude-code`: injects the three HTTP headers that Anthropic requires for subscription tokens to work (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`. Targets the **HTTPRoute** (PostRouting, the default phase). These were originally `requestHeaders` in the backend CRD, but the shipped CRD (v1.5.0) does not declare that field — the AgentgatewayPolicy approach is CRD-validated and functionally identical. Harmless with a plain API key.
-  - `policy-gateway.yaml` - `AgentgatewayPolicy` `llm`. CRD v2.2.1 only supports `authorization` and `rateLimit` as traffic policy fields — OIDC and JWT auth are configured via `rawConfig.policies` on the `AgentgatewayParameters` (see `gateway.yaml`). Contains group-based authorization (`jwt.groups` allow) + per-group tiered rate limits (two descriptor trees: per-user `[group, user_id]` + per-group ceiling `[group_total]`). **Everything targeting this Gateway in the PostRouting phase must stay in ONE CRD resource: two CRD policies targeting the same Gateway silently overwrite each other, both report ACCEPTED/ATTACHED.** The rawConfig policies (`llm-oidc`, `llm-jwt`) use different names and are merged separately, so they coexist with this CRD policy.
+  - `policy-gateway.yaml` - `AgentgatewayPolicy` `llm`. CRD v2.2.1 only supports `authorization` and `rateLimit` as traffic policy fields — OIDC and JWT auth are configured via `rawConfig.policies` on the `AgentgatewayParameters` (see `gateway.yaml`). Contains group-based authorization (`jwt.groups` allow) + per-group tiered rate limits (two descriptor trees: per-user `[group, user_id]` + per-group ceiling `[group_total]`). **Everything targeting this Gateway in the PostRouting phase must stay in ONE CRD resource: two CRD policies targeting the same Gateway silently overwrite each other, both report ACCEPTED/ATTACHED.** The rawConfig policies (`llm-jwt`) use a different name and are merged separately, so they coexist with this CRD policy.
   - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`. **First entry is the verbatim Claude Code identity string** (required for subscription tokens); second is the house preamble. Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — the `*` → `Passthrough` catch-all in `backends.yaml` is opaque and cannot be enriched (so a subscription token over a Passthrough path would miss the identity message and fail).
   - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With the Anthropic backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
   - `oidc-secrets.yaml` - Secret `agentgateway-ui-secrets` with `OIDC_COOKIE_SECRET` (AES-256-GCM key for session cookie encryption). **Populate out of band** (`openssl rand -hex 32`).
@@ -590,7 +588,12 @@ standalone keys (`gateways`, `ui`, `routes`, `llm`, `mcp`) are NOT valid
 because the controller generates those from Gateway API resources. Moved
 OIDC and JWT auth from the invalid `rawConfig.gateways`/`rawConfig.ui`
 keys to `rawConfig.policies` as `LocalPolicy` items targeting the `llm`
-Gateway. `policy-gateway.yaml` retains `traffic.authorization` +
+Gateway. Then discovered that proxy v0.12.0's `FilterOrPolicy` schema does
+not include `oidc` (only `jwtAuth`, `authorization`, `basicAuth`, `apiKey`,
+`extAuthz`, `extProc`, `transformations`, `csrf`, `timeout`, `retry`, etc.).
+Removed OIDC browser auth — the built-in chat UI is now protected by JWT
+auth + network isolation (ClusterIP, `allowedRoutes: Same`) instead.
+`policy-gateway.yaml` retains `traffic.authorization` +
 `traffic.rateLimit` (CRD fields). — Prior: September 2026 (Fixed CRD
 v2.2.1 compatibility for the built-in chat UI. The AgentgatewayPolicy CRD
 does not have `traffic.oidc`, `traffic.jwtAuthentication.jwks.remote.url`,
