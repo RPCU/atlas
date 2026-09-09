@@ -27,9 +27,6 @@ spec:
         kind: HelmRepository
         name: agentgateway-oauth2-proxy
   # Wait for the Crossplane-written OIDC connection secret + the cookie secret.
-  dependsOn:
-    - name: crossplane-resources
-      namespace: flux-system
   values:
     config:
       configFile: |-
