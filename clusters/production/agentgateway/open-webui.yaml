@@ -86,7 +86,7 @@ spec:
             - name: WEBUI_URL
               value: https://chat.rpcu.io
             - name: ENABLE_PERSISTENT_CONFIG
-              value: "false"
+              value: 'false'
             - name: WEBUI_SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -98,7 +98,7 @@ spec:
             # written by crossplane/oidc-agentgateway.yaml. The key names are
             # the provider's, hence the `attribute.` prefix.
             - name: ENABLE_OAUTH_SIGNUP
-              value: "true"
+              value: 'true'
             - name: OAUTH_PROVIDER_NAME
               value: Zitadel
             - name: OPENID_PROVIDER_URL
@@ -120,7 +120,7 @@ spec:
             # Safe here only because Zitadel is the single IdP and it verifies
             # addresses. Open WebUI itself does NOT check `email_verified`.
             - name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL
-              value: "true"
+              value: 'true'
 
             # ---- Role mapping ----------------------------------------------
             # Reuses the argus-owned `groupsClaim` Zitadel Action, the same
@@ -132,7 +132,7 @@ spec:
             # role not present in their claim at each login, and changes only
             # take effect on re-login.
             - name: ENABLE_OAUTH_ROLE_MANAGEMENT
-              value: "true"
+              value: 'true'
             - name: OAUTH_ROLES_CLAIM
               value: groups
             - name: OAUTH_ALLOWED_ROLES
@@ -151,9 +151,9 @@ spec:
             # ⚠️ Sync happens at LOGIN ONLY. A Zitadel group change does not
             # take effect until the user logs out and back in.
             - name: ENABLE_OAUTH_GROUP_MANAGEMENT
-              value: "true"
+              value: 'true'
             - name: ENABLE_OAUTH_GROUP_CREATION
-              value: "true"
+              value: 'true'
             - name: OAUTH_GROUPS_CLAIM
               value: groups
 
@@ -164,9 +164,9 @@ spec:
             # way the form is merely hidden and remains reachable at
             # /auth?form=true as a break-glass.
             - name: ENABLE_LOGIN_FORM
-              value: "false"
+              value: 'false'
             - name: ENABLE_SIGNUP
-              value: "false"
+              value: 'false'
 
             # ---- Upstream model API ----------------------------------------
             # Points at the agentgateway Service in this namespace over its
@@ -175,16 +175,16 @@ spec:
             # Claude credential (backends.yaml), so Open WebUI never sees it and
             # prompt enrichment, metrics and the rate limit all still apply.
             - name: ENABLE_OLLAMA_API
-              value: "false"
+              value: 'false'
             - name: ENABLE_OPENAI_API
-              value: "true"
+              value: 'true'
             - name: OPENAI_API_BASE_URL
               value: http://llm.agentgateway-system.svc:80/v1
             # The gateway requires no credential from Open WebUI (it injects the
             # Anthropic one itself). Open WebUI still sends a bearer token, so
             # this is a placeholder rather than an empty string.
-            - name: OPENAI_API_KEY
-              value: unused
+            # - name: OPENAI_API_KEY
+            #   value: unused
 
             # ---- Forwarding the caller's identity to the gateway ------------
             # THIS IS WHAT MAKES PER-GROUP RATE LIMITING POSSIBLE.
@@ -201,7 +201,7 @@ spec:
             #     NOT the Zitadel group. That is why the groups come separately,
             #     via the custom header below.
             - name: ENABLE_FORWARD_USER_INFO_HEADERS
-              value: "true"
+              value: 'true'
 
             # Per-connection custom header carrying the real Zitadel groups.
             # {{USER_GROUPS}} expands to a comma-joined list of the user's
@@ -227,7 +227,7 @@ spec:
             - name: WEBUI_AUTH_COOKIE_SAME_SITE
               value: lax
             - name: WEBUI_AUTH_COOKIE_SECURE
-              value: "true"
+              value: 'true'
           ports:
             - name: http
               containerPort: 8080
