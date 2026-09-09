@@ -59,9 +59,13 @@ spec:
   rawConfig:
     policies:
       # --- Built-in chat UI OIDC browser authentication ---
-      - name: llm-oidc
+      - name:
+          name: llm-oidc
+          namespace: agentgateway-system
         target:
-          gateway: llm
+          gateway:
+            gatewayName: llm
+            gatewayNamespace: agentgateway-system
         phase: gateway
         policy:
           oidc:
@@ -74,9 +78,13 @@ spec:
               - profile
               - email
       # --- Gateway-level JWT auth (for API calls too) ---
-      - name: llm-jwt
+      - name:
+          name: llm-jwt
+          namespace: agentgateway-system
         target:
-          gateway: llm
+          gateway:
+            gatewayName: llm
+            gatewayNamespace: agentgateway-system
         phase: gateway
         policy:
           jwtAuth:
