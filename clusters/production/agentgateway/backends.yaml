@@ -53,15 +53,15 @@ spec:
       anthropic:
         # Cheapest / least-token-consuming current Claude model. Pinning it here
         # overrides the client's requested model. See the note above.
-        model: claude-haiku-4-5
+        # model: claude-haiku-4-5
   policies:
     auth:
       secretRef:
         name: anthropic-credentials
     ai:
       routes:
-        "/v1/messages": "Messages"
-        "/v1/messages/count_tokens": "AnthropicTokenCount"
-        "/v1/chat/completions": "Completions"
-        "/v1/models": "Models"
-        "*": "Passthrough"
+        '/v1/messages': 'Messages'
+        '/v1/messages/count_tokens': 'AnthropicTokenCount'
+        '/v1/chat/completions': 'Completions'
+        '/v1/models': 'Models'
+        '*': 'Passthrough'
