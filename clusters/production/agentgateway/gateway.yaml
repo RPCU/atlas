@@ -5,30 +5,36 @@
 # deployer watches it and provisions a matching proxy Deployment + Service, both
 # named "llm", in this namespace.
 #
-# The Service exposes three ports:
+# The Service exposes two ports:
 #   80     — LLM traffic (OpenAI-compatible /v1/chat/completions)
-#   15000  — Built-in chat UI (admin port, served by the proxy)
+#   15000  — Built-in chat UI (served by the proxy)
 #
-# Traffic path:
+# Traffic path (THREE hops — see chat-httproute.yaml + oauth2-proxy/):
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
-#            -> Service llm:15000 (this proxy, ClusterIP, built-in UI)
-#            -> JWT auth (Zitadel JWKS, configured in rawConfig)
-#            -> authorization (group-based allow via CRD policy)
-#            -> user sees chat UI, picks model, sends message
-#            -> proxy -> AgentgatewayBackend anthropic -> api.anthropic.com
-#               (Claude credential injected here — see backends.yaml)
+#            -> chat.rpcu.io HTTPRoute -> chat-oauth2-proxy:80
+#            -> oauth2-proxy (Zitadel OIDC browser login; pass_access_token)
+#            -> llm:15000 (built-in chat UI) with Authorization: Bearer <token>
+#            -> llm Gateway CRD policies (policy-gateway.yaml):
+#                 jwtAuthentication (Zitadel JWKS) -> authorization (group Allow)
+#                 -> rateLimit.global (per-group token budgets)
+#            -> AgentgatewayBackend anthropic -> api.anthropic.com
 #
-# Two Gateways in series, each doing what it is good at:
-#   https-external (kgateway)  -> public IP, Let's Encrypt wildcard *.rpcu.io,
-#                                 Cloudflare DNS record via ExternalDNS
-#   llm (agentgateway)         -> OIDC login, JWT auth, token budgets,
-#                                 prompt enrichment, provider routing
+# ⚠️ WHY oauth2-proxy AND NOT native OIDC on the Gateway:
+# OIDC browser auth (the redirect/login/cookie flow) is a STANDALONE-mode-only
+# feature of agentgateway. It does NOT exist in the Kubernetes controller path:
+# the AgentgatewayPolicy CRD has no `traffic.oidc`, and the proxy's Kubernetes
+# config (rawConfig.policies FilterOrPolicy) has no `oidc` field either — on ANY
+# released chart (2.2.x, 1.x, main). Confirmed against proxy v0.12.0: it rejects
+# `oidc` with "unknown field `oidc`". So the browser login is delegated to
+# oauth2-proxy (same pattern as radarr/prowlarr), and the Gateway only does JWT
+# auth + authorization + rate limiting via the CRD — all of which ARE supported.
 #
-# CRD v2.2.1 limitations: the AgentgatewayPolicy CRD does not have
-# traffic.oidc, traffic.jwtAuthentication.jwks.remote.url, or
-# frontend.metrics. Those go in rawConfig which is merged into the proxy's
-# upstream config file. CRD policies handle what they can (authorization,
-# rateLimit, transformation).
+# rawConfig is intentionally OMITTED here. Everything auth-related lives in
+# policy-gateway.yaml as a proper AgentgatewayPolicy CRD. Do not re-add
+# rawConfig.policies for OIDC/JWT/rateLimit — the proxy's Kubernetes config
+# only accepts top-level keys config/binds/frontendPolicies/policies/workloads/
+# services/backends, and hand-rolled `remoteRateLimit`/`oidc` there crash the
+# proxy ("exactly 1 policy", NamespacedHostname, unknown field `oidc`).
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayParameters
@@ -38,105 +44,12 @@ metadata:
 spec:
   logging:
     format: json
-  # First install, so there is no Mimir history to size against. Follows the
-  # house rule: memory limit only, never a CPU limit (CPU is compressible; a
-  # limit only throttles). Revisit once the proxy has a few days of traffic.
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
       memory: 512Mi
-  # JWT auth + authorization + rateLimit are configured via rawConfig because
-  # the CRD doesn't expose them with the right schema (jwks.remote.url not in
-  # CRD v2.2.1, and rawConfig.policies replaces the CRD-generated policies
-  # array). rawConfig is merged into the proxy's upstream config file.
-  #
-  # IMPORTANT: the Kubernetes proxy config only accepts these top-level keys:
-  #   config, binds, frontendPolicies, policies, workloads, services, backends
-  # The standalone keys (gateways, ui, routes, llm, mcp) are NOT valid here —
-  # the controller generates those from Gateway API resources.
-  #
-  # NOTE: OIDC browser auth (oidc field) is NOT available in rawConfig.policies
-  # on proxy v0.12.0 — the FilterOrPolicy schema in this version does not
-  # include it. OIDC is only available inline on gateway listeners, which the
-  # controller generates. The built-in chat UI is protected by JWT auth +
-  # network isolation (ClusterIP, allowedRoutes: Same) instead.
-  rawConfig:
-    policies:
-      # --- JWT auth (gateway-level, runs first) ---
-      - name:
-          name: llm-jwt
-          namespace: agentgateway-system
-        target:
-          gateway:
-            gatewayName: llm
-            gatewayNamespace: agentgateway-system
-        phase: gateway
-        policy:
-          jwtAuth:
-            mode: strict
-            providers:
-              - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
-                jwks:
-                  url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
-      # --- Authorization + rate limits (PostRouting, runs after route selection) ---
-      # A signature-valid JWT is not enough: the caller must actually hold one
-      # of the org's roles. Every registered user is auto-granted `public-user`
-      # by the argus `addUserGrant` Action, so in practice this admits every
-      # real user while rejecting tokens minted for unrelated apps.
-      #
-      # Token budgets: unit=tokens means the cost debited per request is the LLM
-      # token count (input + output), not 1. Two independent descriptors:
-      #   1. [group, user_id] — each user's own budget, sized by their group.
-      #   2. [group_total]    — a ceiling for the whole group combined.
-      - name:
-          name: llm-authz-ratelimit
-          namespace: agentgateway-system
-        target:
-          gateway:
-            gatewayName: llm
-            gatewayNamespace: agentgateway-system
-        phase: route
-        policy:
-          authorization:
-            rules:
-              - allow: '["rpcu-admin", "public-admin", "public-user"].exists(g, g in default(jwt.groups, []))'
-          remoteRateLimit:
-            domain: agentgateway
-            service:
-              name: ratelimit
-              port: 8081
-            descriptors:
-              - entries:
-                  - key: group
-                    value: '"rpcu-admin" in default(jwt.groups, []) ? "rpcu-admin" : ("public-admin" in default(jwt.groups, []) ? "public-admin" : "public-user")'
-                  - key: user_id
-                    value: 'default(jwt.sub, "unknown")'
-                type: tokens
-              - entries:
-                  - key: group_total
-                    value: '"rpcu-admin" in default(jwt.groups, []) ? "rpcu-admin" : ("public-admin" in default(jwt.groups, []) ? "public-admin" : "public-user")'
-                type: tokens
-  # JWT secret: client_id/client_secret from the Crossplane Oidc app's
-  # connection secret (kept for potential future use; not consumed by rawConfig
-  # since OIDC browser auth is not available on proxy v0.12.0).
-  env:
-    - name: AGW_OIDC_CLIENT_ID
-      valueFrom:
-        secretKeyRef:
-          name: agentgateway-oidc
-          key: attribute.client_id
-    - name: AGW_OIDC_CLIENT_SECRET
-      valueFrom:
-        secretKeyRef:
-          name: agentgateway-oidc
-          key: attribute.client_secret
-    - name: OIDC_COOKIE_SECRET
-      valueFrom:
-        secretKeyRef:
-          name: agentgateway-ui-secrets
-          key: OIDC_COOKIE_SECRET
   deployment: {}
   service:
     spec:

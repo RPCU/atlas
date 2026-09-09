@@ -2,16 +2,18 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: agentgateway-system
 resources:
-  # LLM gateway (authenticated — JWT verified by llm Gateway before traffic reaches the proxy)
-  # Anthropic backend + its Vault-backed credential.
+  # LLM gateway (Anthropic backend + its Vault-backed credential + the Zitadel
+  # JWKS backend). Auth is enforced by policy-gateway.yaml (JWT + authz + rate
+  # limit) on the llm Gateway; the browser OIDC login is done by oauth2-proxy.
   - secrets.yaml
-  - oidc-secrets.yaml
   - gateway.yaml
   - backends.yaml
   - httproute.yaml
+  - policy-gateway.yaml
   - policy-claude-code.yaml
   - policy-prompt.yaml
   - ratelimit.yaml
   - podmonitor.yaml
-  # Chat frontend (agentgateway built-in UI, public via https-external)
+  # Chat frontend: oauth2-proxy (Zitadel OIDC login) + the public HTTPRoute.
+  - oauth2-proxy
   - chat-httproute.yaml

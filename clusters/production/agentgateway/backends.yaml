@@ -65,3 +65,21 @@ spec:
         "/v1/chat/completions": "Completions"
         "/v1/models": "Models"
         "*": "Passthrough"
+---
+# Static backend for Zitadel's JWKS endpoint, referenced by
+# policy-gateway.yaml's jwtAuthentication.providers[].jwks.remote.backendRef.
+# The Gateway needs a reachable backend (not a bare URL) to fetch the signing
+# keys used to validate incoming Zitadel JWTs. TLS is enabled with SNI set to
+# the Zitadel host so the HTTPS handshake presents the right server name.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: zitadel-jwks
+  namespace: agentgateway-system
+spec:
+  static:
+    host: rpcu-gabeck.eu1.zitadel.cloud
+    port: 443
+  policies:
+    tls:
+      sni: rpcu-gabeck.eu1.zitadel.cloud

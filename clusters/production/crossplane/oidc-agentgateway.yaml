@@ -1,20 +1,26 @@
-# Zitadel OIDC client for the LLM stack's built-in chat UI.
+# Zitadel OIDC client for the LLM stack's chat UI, consumed by oauth2-proxy.
 #
-# agentgateway's built-in UI (port 15000) handles its own OIDC browser login
-# via `traffic.oidc` on the Gateway — no Open WebUI, no oauth2-proxy. The flow:
-#   browser -> chat.rpcu.io -> agentgateway (no session) -> redirect to Zitadel
-#   -> user authenticates -> Zitadel redirects to /oauth/callback
-#   -> agentgateway exchanges code for JWT (PKCE) -> session cookie set
+# agentgateway's native OIDC browser login is standalone-only (no traffic.oidc
+# in the Kubernetes controller path), so the OIDC flow is handled by oauth2-proxy
+# in front of chat.rpcu.io (clusters/production/agentgateway/oauth2-proxy/), same
+# pattern as radarr/prowlarr. The flow:
+#   browser -> chat.rpcu.io -> oauth2-proxy (no session) -> redirect to Zitadel
+#   -> user authenticates -> Zitadel redirects to /oauth2/callback
+#   -> oauth2-proxy exchanges code -> session cookie set -> forwards to llm:15000
+#      with the access token as `Authorization: Bearer <jwt>`
 #
 # appType is IMMUTABLE in Zitadel. The existing WEB + BASIC pairing is a
-# confidential client with a client_secret, which is what agentgateway's
+# confidential client with a client_secret, which is what oauth2-proxy's
 # server-side authorization_code flow needs. Do not change it.
 #
-# accessTokenRoleAssertion + idTokenRoleAssertion are load-bearing: the
-# argus-owned `groupsClaim` Zitadel Action flattens project role grants into a
-# `groups` claim, but only for tokens with assertion enabled. agentgateway uses
-# that claim in rate limit descriptors (jwt.groups) for per-group tiering.
-# Turn these off and every user falls through to the smallest tier.
+# accessTokenType: OIDC_TOKEN_TYPE_JWT is load-bearing: it makes the access token
+# a verifiable JWT, so the llm Gateway's jwtAuthentication policy can validate it
+# and read jwt.groups / jwt.sub. accessTokenRoleAssertion + idTokenRoleAssertion
+# are also load-bearing: the argus-owned `groupsClaim` Zitadel Action flattens
+# project role grants into a `groups` claim, but only for tokens with assertion
+# enabled. The llm Gateway uses that claim for group authorization + per-group
+# rate limit tiering. Turn these off and every user falls through to the
+# smallest tier (or fails authorization entirely).
 ---
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
@@ -35,9 +41,9 @@ spec:
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
 
-    # agentgateway's OIDC policy redirectURI must match one of these exactly.
+    # oauth2-proxy's redirect_url must match one of these exactly.
     redirectUris:
-      - https://chat.rpcu.io/oauth/callback
+      - https://chat.rpcu.io/oauth2/callback
     postLogoutRedirectUris:
       - "*"
     additionalOrigins: []
@@ -48,8 +54,8 @@ spec:
     version: OIDC_VERSION_1_0
     orgId: "369994019545117645"
     projectId: "370001231734928333" # administration
-  # Connection secret lands in agentgateway-system where the OIDC policy reads
-  # the client_id / client_secret directly.
+  # Connection secret lands in agentgateway-system where oauth2-proxy reads the
+  # client_id / client_secret (attribute.client_id / attribute.client_secret).
   writeConnectionSecretToRef:
     name: agentgateway-oidc
     namespace: agentgateway-system
