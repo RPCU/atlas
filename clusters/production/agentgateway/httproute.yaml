@@ -34,11 +34,7 @@ spec:
       namespace: agentgateway-system
       sectionName: http
   rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
+    - backendRefs:
         - name: anthropic
           group: agentgateway.dev
           kind: AgentgatewayBackend
