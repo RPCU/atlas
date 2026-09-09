@@ -7,17 +7,12 @@
 #
 # The Service exposes three ports:
 #   80     — LLM traffic (OpenAI-compatible /v1/chat/completions)
-#   443    — HTTPS LLM traffic (unused for now, no cert)
 #   15000  — Built-in chat UI (admin port, served by the proxy)
 #
-# The built-in UI handles its own OIDC login via `traffic.jwtAuthentication`
-# on the Gateway — users authenticate with Zitadel directly, no Open WebUI or
-# oauth2-proxy needed. JWT claims (sub, groups) drive per-user/per-group rate
-# limits (see policy-gateway.yaml).
-#
+# Traffic path:
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
 #            -> Service llm:15000 (this proxy, ClusterIP, built-in UI)
-#            -> jwtAuthentication (Zitadel JWT validated here)
+#            -> Zitadel OIDC browser login (configured in rawConfig ui.policies)
 #            -> user sees chat UI, picks model, sends message
 #            -> proxy -> AgentgatewayBackend anthropic -> api.anthropic.com
 #               (Claude credential injected here — see backends.yaml)
@@ -25,12 +20,14 @@
 # Two Gateways in series, each doing what it is good at:
 #   https-external (kgateway)  -> public IP, Let's Encrypt wildcard *.rpcu.io,
 #                                 Cloudflare DNS record via ExternalDNS
-#   llm (agentgateway)         -> JWT auth, token budgets, prompt enrichment,
-#                                 provider routing and credential injection
+#   llm (agentgateway)         -> OIDC login, JWT auth, token budgets,
+#                                 prompt enrichment, provider routing
 #
-# allowedRoutes is "Same" because every route that should attach here lives in
-# this namespace. Widening it would let any namespace in the cluster attach a
-# route to a gateway that holds a paid LLM credential.
+# CRD v2.2.1 limitations: the AgentgatewayPolicy CRD does not have
+# traffic.oidc, traffic.jwtAuthentication.jwks.remote.url, or
+# frontend.metrics. Those go in rawConfig which is merged into the proxy's
+# upstream config file. CRD policies handle what they can (authorization,
+# rateLimit, transformation).
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayParameters
@@ -49,6 +46,55 @@ spec:
       memory: 128Mi
     limits:
       memory: 512Mi
+  # OIDC + JWT auth are configured via rawConfig because the CRD doesn't expose
+  # them as policy fields. rawConfig is merged into the proxy's upstream config
+  # alongside CRD-generated config.
+  rawConfig:
+    # --- Built-in chat UI authentication ---
+    ui:
+      gateways: [llm]
+      policies:
+        oidc:
+          issuer: https://rpcu-gabeck.eu1.zitadel.cloud
+          clientId: $AGW_OIDC_CLIENT_ID
+          clientSecret: $AGW_OIDC_CLIENT_SECRET
+          redirectURI: https://chat.rpcu.io/oauth/callback
+          scopes:
+            - openid
+            - profile
+            - email
+        authorization:
+          rules:
+            - allow: '["rpcu-admin", "public-admin", "public-user"].exists(g, g in jwt.groups)'
+    # --- Gateway-level JWT auth (for API calls too) ---
+    gateways:
+      llm:
+        jwtAuthentication:
+          mode: Strict
+          providers:
+            - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
+              jwks:
+                remote:
+                  url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
+                  cacheDuration: 1h
+  # OIDC secrets: client_id/client_secret from the Crossplane Oidc app's
+  # connection secret, cookie encryption key generated out of band.
+  env:
+    - name: AGW_OIDC_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: agentgateway-oidc
+          key: attribute.client_id
+    - name: AGW_OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: agentgateway-oidc
+          key: attribute.client_secret
+    - name: OIDC_COOKIE_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: agentgateway-ui-secrets
+          key: OIDC_COOKIE_SECRET
   deployment: {}
   service:
     spec:

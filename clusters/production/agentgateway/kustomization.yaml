@@ -5,6 +5,7 @@ resources:
   # LLM gateway (authenticated — JWT verified by llm Gateway before traffic reaches the proxy)
   # Anthropic backend + its Vault-backed credential.
   - secrets.yaml
+  - oidc-secrets.yaml
   - gateway.yaml
   - backends.yaml
   - httproute.yaml
