@@ -33,12 +33,22 @@ spec:
 # The budgets themselves. `requests_per_unit` is a TOKEN count, not a request
 # count, because the policy reports these descriptors with unit: Tokens.
 #
-# Keys must match the descriptor entry `name`s in policy-gateway.yaml exactly
+# Keys must match the descriptor entry `name`s in policy-ratelimit.yaml exactly
 # (case-sensitive), and `domain` must match the policy's `domain`.
 #
-# Simple global rate limit: a single shared budget for all users. No per-user
-# or per-group breakdown — Open WebUI handles auth and can enforce its own
-# per-user quotas if needed.
+# Three independent counter trees, all fed from the identity Open WebUI forwards
+# (see open-webui.yaml ENABLE_FORWARD_USER_INFO_HEADERS + OPENAI_API_CONFIGS):
+#
+#   tier + user_id  Each user gets their own daily budget, sized by their
+#                   Zitadel group. The outer key selects the tier, the inner
+#                   user_id key gets a distinct counter per value.
+#   tier_total      A ceiling for a whole tier combined, so one tier cannot
+#                   drain the shared Anthropic credential on its own.
+#   global          A backstop that counts EVERY request, including any that
+#                   arrive with no identity headers at all. Without this a
+#                   caller who simply omits the headers would be unlimited:
+#                   agentgateway SKIPS a descriptor whose expression fails,
+#                   and a skipped descriptor enforces nothing.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -48,11 +58,53 @@ data:
   config.yaml: |
     domain: agentgateway
     descriptors:
-      # Single global daily token budget for all users combined.
-      - key: global
+      # ---- Per-user daily token budget, tiered by Zitadel group ----
+      - key: tier
+        value: rpcu-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 5000000
+      - key: tier
+        value: public-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 1000000
+      - key: tier
+        value: public-user
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 100000
+
+      # ---- Whole-tier daily ceiling ----
+      - key: tier_total
+        value: rpcu-admin
         rate_limit:
           unit: day
           requests_per_unit: 20000000
+      - key: tier_total
+        value: public-admin
+        rate_limit:
+          unit: day
+          requests_per_unit: 5000000
+      - key: tier_total
+        value: public-user
+        rate_limit:
+          unit: day
+          requests_per_unit: 1000000
+
+      # ---- Unconditional backstop (no header dependency) ----
+      # Deliberately above the sum of the tier ceilings: this is a circuit
+      # breaker for the identity-less case, not the primary budget.
+      - key: global
+        rate_limit:
+          unit: day
+          requests_per_unit: 25000000
 ---
 apiVersion: apps/v1
 kind: Deployment

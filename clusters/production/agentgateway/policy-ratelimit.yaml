@@ -1,0 +1,86 @@
+# Per-user, per-group token budgets on the llm Gateway.
+#
+# ---- HOW THE IDENTITY GETS HERE -------------------------------------------
+# Open WebUI is the only authenticated entry point; it terminates the Zitadel
+# OIDC login. But it then calls this gateway with its OWN static credential, so
+# by default every request looks like a single client and only ONE global budget
+# is enforceable. That is the whole problem this file solves.
+#
+# open-webui.yaml sets ENABLE_FORWARD_USER_INFO_HEADERS plus a per-connection
+# custom header, so each upstream call carries:
+#   X-OpenWebUI-User-Id      internal UUID4, stable per user
+#   X-OpenWebUI-User-Groups  comma-joined Zitadel groups, e.g. "rpcu-admin"
+#   X-OpenWebUI-User-Role    Open WebUI's own role (admin/user) — NOT used here,
+#                            it collapses the three Zitadel groups into two
+# and the descriptors below key their counters on those.
+#
+#   user -> OIDC -> Open WebUI -> (identity headers) -> llm Gateway
+#        -> rate limit check -> anthropic
+#
+# ---- THREE TRAPS, ALL LOAD-BEARING ----------------------------------------
+# 1. FAIL-OPEN. If an expression errors at request time, agentgateway skips the
+#    ENTIRE descriptor — it is never sent to the rate limit service, so nothing
+#    is enforced for that request. A bare request.headers["x"] on a missing
+#    header raises NoSuchKey and does exactly that. Hence default() on every
+#    header read, plus the unconditional `global` descriptor that depends on no
+#    header at all and therefore always counts.
+# 2. EMPTY IS NOT MISSING. A user with zero groups still gets the header, with
+#    an empty string value. That falls through the ternary to the most
+#    restrictive tier, which is the correct default.
+# 3. ORDER IS NONDETERMINISTIC. Open WebUI returns groups ordered by
+#    updated_at DESC, so the header can be "rpcu-admin,public-user" today and
+#    "public-user,rpcu-admin" tomorrow. Never compare the whole string — test
+#    for membership, highest privilege first, which is what the ternary does.
+#
+# ---- TRUST MODEL ----------------------------------------------------------
+# These headers are plaintext and set by the application, not derived from a
+# signed token — strictly weaker than the `jwt.groups` this used to read off a
+# validated Zitadel JWT. It holds only because the llm Gateway is ClusterIP with
+# allowedRoutes.namespaces.from: Same, so nothing outside this namespace can
+# reach it to forge them. If the Gateway is ever exposed, this becomes
+# bypassable and the budgets must move back onto a verified JWT claim.
+#
+# Note the rate limit policy's CEL context is limited to `source`, `request` and
+# `jwt` — `llm` is NOT available, so token counts cannot be read in an
+# expression. `unit: Tokens` is what makes the reported cost a token count.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-ratelimit
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm
+  traffic:
+    rateLimit:
+      global:
+        domain: agentgateway
+        backendRef:
+          kind: Service
+          name: ratelimit
+          namespace: agentgateway-system
+          port: 8081
+        descriptors:
+          # Each user's own daily budget, at their tier's size.
+          - entries:
+              - name: tier
+                expression: 'default(request.headers["x-openwebui-user-groups"], "").contains("rpcu-admin") ? "rpcu-admin" : (default(request.headers["x-openwebui-user-groups"], "").contains("public-admin") ? "public-admin" : "public-user")'
+              - name: user_id
+                expression: 'default(request.headers["x-openwebui-user-id"], "anonymous")'
+            unit: Tokens
+
+          # The whole tier's combined ceiling.
+          - entries:
+              - name: tier_total
+                expression: 'default(request.headers["x-openwebui-user-groups"], "").contains("rpcu-admin") ? "rpcu-admin" : (default(request.headers["x-openwebui-user-groups"], "").contains("public-admin") ? "public-admin" : "public-user")'
+            unit: Tokens
+
+          # Backstop. Depends on no header, so it counts even a request that
+          # arrives with no identity at all and cannot be skipped.
+          - entries:
+              - name: global
+                expression: '"all"'
+            unit: Tokens

@@ -140,6 +140,23 @@ spec:
             - name: OAUTH_ADMIN_ROLES
               value: rpcu-admin,public-admin
 
+            # ---- Group sync: OIDC claim -> internal Groups ------------------
+            # Required for {{USER_GROUPS}} (below) to expand to anything. Group
+            # MANAGEMENT gates the sync itself; without it update_user_groups is
+            # never called and the header is permanently empty. Group CREATION
+            # auto-creates a Group whose name is the verbatim claim string, so
+            # "rpcu-admin" in Zitadel becomes the Group "rpcu-admin" here —
+            # without it, only groups hand-created in the admin UI are assigned.
+            #
+            # ⚠️ Sync happens at LOGIN ONLY. A Zitadel group change does not
+            # take effect until the user logs out and back in.
+            - name: ENABLE_OAUTH_GROUP_MANAGEMENT
+              value: "true"
+            - name: ENABLE_OAUTH_GROUP_CREATION
+              value: "true"
+            - name: OAUTH_GROUPS_CLAIM
+              value: groups
+
             # ---- Local accounts --------------------------------------------
             # Hide the password form so SSO is the only offered path, but do NOT
             # set ENABLE_PASSWORD_AUTH=false: that disables password login in
@@ -168,6 +185,43 @@ spec:
             # this is a placeholder rather than an empty string.
             - name: OPENAI_API_KEY
               value: unused
+
+            # ---- Forwarding the caller's identity to the gateway ------------
+            # THIS IS WHAT MAKES PER-GROUP RATE LIMITING POSSIBLE.
+            #
+            # Without it, every request reaches agentgateway as "Open WebUI",
+            # one identity, and the only enforceable budget is a single global
+            # one. With it, the gateway can key its rate limit counters on the
+            # end user (see policy-ratelimit.yaml).
+            #
+            # Sends X-OpenWebUI-User-{Id,Email,Name,Role}. Two caveats:
+            #   - User-Id is Open WebUI's internal UUID4, NOT the Zitadel `sub`.
+            #     Stable per user, but it will not correlate with Zitadel logs.
+            #   - User-Role is Open WebUI's OWN role — only admin/user/pending —
+            #     NOT the Zitadel group. That is why the groups come separately,
+            #     via the custom header below.
+            - name: ENABLE_FORWARD_USER_INFO_HEADERS
+              value: "true"
+
+            # Per-connection custom header carrying the real Zitadel groups.
+            # {{USER_GROUPS}} expands to a comma-joined list of the user's
+            # internal Group NAMES, which the OIDC sync above makes identical to
+            # the Zitadel claim values: "rpcu-admin,public-admin".
+            #
+            # The "0" key is this connection's index in OPENAI_API_BASE_URLS.
+            # The singular OPENAI_API_BASE_URL above feeds that list, so a single
+            # connection lands at index 0.
+            #
+            # ⚠️ STRICT JSON. A trailing comma or comment makes Open WebUI log a
+            # warning and fall back to {} — the header then silently never gets
+            # sent, which looks exactly like a gateway-side bug.
+            #
+            # ⚠️ ORDER IS NONDETERMINISTIC (groups come back updated_at DESC),
+            # and a user with no groups yields an EMPTY STRING with the header
+            # still present. Never exact-match the whole value downstream; test
+            # for membership. policy-ratelimit.yaml does exactly that.
+            - name: OPENAI_API_CONFIGS
+              value: '{"0":{"enable":true,"headers":{"X-OpenWebUI-User-Groups":"{{USER_GROUPS}}"}}}'
 
             # ---- Cookies behind a TLS-terminating proxy ---------------------
             - name: WEBUI_AUTH_COOKIE_SAME_SITE
