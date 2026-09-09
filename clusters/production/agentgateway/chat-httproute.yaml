@@ -1,0 +1,49 @@
+# Public ingress: chat.rpcu.io on the kgateway "https-external" Gateway.
+#
+# Routes to the agentgateway built-in chat UI on port 15000. The UI handles
+# its own OIDC login (Zitadel JWT via traffic.oidc on the llm Gateway) — no
+# oauth2-proxy, no Open WebUI.
+#
+# ExternalDNS on this cluster syncs `gateway-httproute` sources for the rpcu.io
+# zone with policy: sync, so the Cloudflare record for chat.rpcu.io is created
+# from this object — nothing else to do for DNS or TLS.
+#
+# Two Gateways in series:
+#   https-external (kgateway)  -> public IP, Let's Encrypt wildcard *.rpcu.io,
+#                                 Cloudflare DNS record via ExternalDNS
+#   llm (agentgateway)         -> OIDC login, JWT auth, token budgets,
+#                                 prompt enrichment, provider routing
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: chat-external
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "chat.rpcu.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: llm
+          port: 15000
+---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: chat-external
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: chat-external
+  timeouts:
+    streamIdle: 1800s

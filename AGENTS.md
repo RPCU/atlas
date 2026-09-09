@@ -67,7 +67,7 @@ Atlas resources depend on objects that are **NOT defined in this repo**:
 | StorageClasses: `csi-cinder-sc-delete` (default, RWO) + `ceph-cephfs` (RWX)     | all PVCs (see Storage section)                                                                                                                                         |
 | Shared Zitadel org/projects (argus openstack overlay owns the platform)         | `clusters/production/crossplane/oidc-*.yaml` (reference org/project by literal external ID)                                                                            |
 | DragonflyDB operator (argus Sveltos `dragonfly` add-on, label-gated)            | `clusters/production/zot/dragonfly.yaml` (zot's Redis remoteCache) **and** `clusters/production/agentgateway/ratelimit.yaml` (the LLM budget counters)                 |
-| Zitadel `groupsClaim` Action + the org's roles (argus openstack overlay)        | `clusters/production/agentgateway/open-webui.yaml` maps the `groups` claim to Open WebUI roles via `OAUTH_ROLES_CLAIM` (`rpcu-admin` / `public-admin` / `public-user`) |
+| Zitadel `groupsClaim` Action + the org's roles (argus openstack overlay)        | `policy-gateway.yaml` uses `jwt.groups` for per-group tiered rate limits (`rpcu-admin` / `public-admin` / `public-user`) |
 | kube-prometheus-stack (Sveltos `monitoring` add-on)                             | `clusters/production/{palworld/servicemonitor,agentgateway/podmonitor}.yaml` — both MUST carry `release: kube-prometheus-stack`                                        |
 
 If something in atlas fails to reconcile, check whether its argus-side
@@ -114,7 +114,7 @@ the `atlas` Flux Kustomization reconciles):
 - `oidc-jellystat.yaml` - `Oidc` app for jellystat's oauth2-proxy (redirect `https://jellystat.production.rpcu.lan/oauth2/callback`), project `370001231734928333` ("administration"), connection secret `jellystat-oidc` → ns media
 - `oidc-jellysweep.yaml` - `Oidc` app for jellysweep's **native** OIDC login (redirect `https://jellysweep.production.rpcu.lan/auth/oidc/callback`), project `370001231784969038` ("public"), **role assertion enabled** (id/access token + userinfo) so the argus `groupsClaim` action surfaces the `groups` claim jellysweep matches against `admin_group: public-admin`. Connection secret `jellysweep-oidc` → ns media
 - `oidc-zot.yaml` - `Oidc` app for the **zot** container registry's **native** OIDC web-UI login (redirect `https://zot.rpcu.io/zot/auth/callback/oidc`), project `370001231734928333` ("administration"), **role assertion enabled** so the argus `groupsClaim` action surfaces the `groups` claim zot matches against its `admin` group ACL. Connection secret `zot-oidc` → **ns registry** (not media)
-- `oidc-agentgateway.yaml` - `Oidc` app for **Open WebUI** (Zitadel OIDC login at `chat.rpcu.io`), project `370001231734928333` ("administration"), `OIDC_APP_TYPE_WEB` + `OIDC_AUTH_METHOD_TYPE_BASIC`. Redirect URIs `https://chat.rpcu.io/oauth/oidc/callback` + `https://chat.rpcu.io/oauth/oidc/login/callback`. Connection secret `agentgateway-oidc` → **ns agentgateway-system** (Open WebUI reads it directly from the same namespace). `appType` is **immutable** in Zitadel — do not change it.
+- `oidc-agentgateway.yaml` - `Oidc` app for the **agentgateway built-in chat UI** (Zitadel OIDC login at `chat.rpcu.io`), project `370001231734928333` ("administration"), `OIDC_APP_TYPE_WEB` + `OIDC_AUTH_METHOD_TYPE_BASIC`. Redirect URI `https://chat.rpcu.io/oauth/callback`. Connection secret `agentgateway-oidc` → **ns agentgateway-system** (the OIDC policy reads `client_id`/`client_secret` directly). `appType` is **immutable** in Zitadel — do not change it.
 
 > **Shared Zitadel ownership.** The Zitadel org `rpcu` (`369994019545117645`)
 > and its projects are OWNED by the argus openstack cluster overlay. Atlas
@@ -226,16 +226,20 @@ the `atlas` Flux Kustomization reconciles):
 `infrastructure/agentgateway/namespace.yaml`, not here). Reconciled by the
 `agentgateway-resources` Flux Kustomization, **not** by the root `atlas` one:
 
-- `agentgateway/` - The whole LLM stack: chat frontend, gateway, and the
-  Anthropic (Claude) backend. Despite the directory name it holds Open WebUI as
-  well as agentgateway itself.
+- `agentgateway/` - The whole LLM stack: built-in chat UI, gateway, and the
+  Anthropic (Claude) backend. No Open WebUI — the agentgateway proxy serves its
+  own authenticated chat UI on port 15000.
 
-  **Traffic path — authentication lives at the TOP, everything below it is open:**
+  **Traffic path — two Gateways in series, each doing what it is good at:**
 
   ```
   internet → https-external (kgateway, 172.16.255.10, TLS terminate, LE wildcard)
-           → open-webui  (chat.rpcu.io — Zitadel OIDC login happens HERE)
-           → Service llm:80 (ClusterIP, the agentgateway proxy, NO auth)
+           → chat.rpcu.io (HTTPRoute → llm:15000, the built-in chat UI)
+           → jwtAuthentication (Zitadel JWT validated, session cookie set)
+           → authorization (group-based allow: rpcu-admin / public-admin / public-user)
+           → user sees chat UI, picks model, sends message
+           → rate limit check (per-user daily token budget, tiered by group)
+           → prompt enrichment (Claude Code identity spoof for subscription tokens)
            → AgentgatewayBackend anthropic → api.anthropic.com
              (the shared Claude credential is injected HERE)
   ```
@@ -245,14 +249,12 @@ the `atlas` Flux Kustomization reconciles):
   second Gateway. Keeping it ClusterIP means one public IP, one cert chain and
   one DNS owner for the whole cluster.
 
-  > **⚠️ THE SECURITY MODEL IS NETWORK POSITION, NOT A TOKEN.** agentgateway
-  > does not authenticate its callers, and it injects a paid Claude credential
-  > into everything it forwards. It is safe only because the `llm` Gateway is
-  > ClusterIP with `allowedRoutes.namespaces.from: Same` and **no public
-  > HTTPRoute points at it** — Open WebUI is the sole client and owns auth.
-  > Adding a public route turns this into an open, credential-leaking LLM
-  > endpoint on the internet. Re-add `traffic.jwtAuthentication` to
-  > `policy-gateway.yaml` first if you ever need to expose it.
+  > **⚠️ SECURITY MODEL: JWT AUTH + NETWORK ISOLATION.** The `llm` Gateway
+  > enforces `jwtAuthentication` (Strict mode, Zitadel JWKS) + `authorization`
+  > (group-based) + per-group rate limits + model pinning. It is ClusterIP with
+  > `allowedRoutes.namespaces.from: Same` — only `chat-httproute.yaml` in this
+  > namespace can reach it. The Claude credential is injected only after auth
+  > and rate limit checks pass.
 
   > **⚠️ CLAUDE SUBSCRIPTION vs API KEY (agentgateway issue #2297).** The Vault
   > path `secrets-production/agentgateway/anthropic` key `apiKey` accepts EITHER:
@@ -264,62 +266,34 @@ the `atlas` Flux Kustomization reconciles):
   > the **Claude Code CLI**. That impersonation has THREE parts, all in this
   > repo: (1)+(2) the headers `anthropic-beta: oauth-2025-04-20`,
   > `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli` set via
-  > `policies.ai.requestHeaders` in `backends.yaml`; (3) the **first system
-  > message must be verbatim** `"You are Claude Code, Anthropic's official CLI
-for Claude."`, injected as the first `prepend` entry in `policy-prompt.yaml`.
-  > Reword any of them and Sonnet/Opus start returning 401/403 under a
-  > subscription token (Haiku is lenient; an API key ignores all three, so the
-  > same manifests work for both credential types).
+  > `traffic.transformation.request.set` in `policy-claude-code.yaml`; (3) the
+  > **first system message must be verbatim** `"You are Claude Code, Anthropic's
+  > official CLI for Claude."`, injected as the first `prepend` entry in
+  > `policy-prompt.yaml`. Reword any of them and Sonnet/Opus start returning
+  > 401/403 under a subscription token (Haiku is lenient; an API key ignores all
+  > three, so the same manifests work for both credential types).
   - `secrets.yaml` - ExternalSecret `anthropic-credentials`, key `Authorization` ← Vault `secrets-production/agentgateway/anthropic` property `apiKey`. Read by `backends.yaml`'s `policies.auth.secretRef`. Accepts an `sk-ant-api…` key OR an `sk-ant-oat…` subscription token (see the warning above). **Populate out of band.**
-  - `gateway.yaml` - `AgentgatewayParameters` `llm` (**`service.spec.type: ClusterIP`** — the deployer defaults to LoadBalancer, which would burn an Octavia LB) + Gateway `llm` (class `agentgateway`, HTTP :80, `allowedRoutes.namespaces.from: Same`). The controller's deployer creates the `llm` Deployment + Service from this.
-  - `backends.yaml` - `AgentgatewayBackend` `anthropic`. **`provider.anthropic.model: claude-haiku-4-5`** PINS every request to the cheapest/least-token-consuming current Claude model ($1/$5 per MTok, 200K ctx), **overriding** whatever Open WebUI's picker sends — so no user can burn the shared credential on Sonnet/Opus. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `anthropic-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (Open WebUI's OpenAI dialect, converted to Anthropic `/v1/messages`) and `/v1/messages` → Messages (native). `policies.ai.requestHeaders.set` carries the Claude Code identity headers for subscription tokens (see the ⚠️ above). Haiku is also lenient about that identity spoof, so it is the most robust pin under a subscription token.
+  - `gateway.yaml` - `AgentgatewayParameters` `llm` (**`service.spec.type: ClusterIP`** — the deployer defaults to LoadBalancer, which would burn an Octavia LB) + port 15000 exposed for the built-in chat UI. Gateway `llm` (class `agentgateway`, HTTP :80 + :15000, `allowedRoutes.namespaces.from: Same`). The controller's deployer creates the `llm` Deployment + Service from this.
+  - `backends.yaml` - `AgentgatewayBackend` `anthropic`. **`provider.anthropic.model: claude-haiku-4-5`** PINS every request to the cheapest/least-token-consuming current Claude model ($1/$5 per MTok, 200K ctx), **overriding** whatever the chat UI's picker sends — so no user can burn the shared credential on Sonnet/Opus. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `anthropic-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (the UI's OpenAI dialect, converted to Anthropic `/v1/messages`) and `/v1/messages` → Messages (native). Haiku is also lenient about the Claude Code identity spoof, so it is the most robust pin under a subscription token.
   - `httproute.yaml` - A plain **catch-all** → the `anthropic` backend. The old `x-model` header matching (and the PreRouting policy that fed it) was deleted: it only earns its keep with two or more providers. The file documents how to re-add a per-provider rule above the catch-all.
-  - `policy-gateway.yaml` - `AgentgatewayPolicy` `llm`. Contains **only** `traffic.rateLimit.global`. `jwtAuthentication`, `authorization` and the `frontend.metrics` identity labels were removed when auth moved to Open WebUI. **Everything targeting this Gateway in the PostRouting phase must stay in ONE resource: when two AgentgatewayPolicy resources target the same Gateway, one silently overwrites the other by creation order and BOTH still report ACCEPTED/ATTACHED.**
+  - `policy-claude-code.yaml` - `AgentgatewayPolicy` `llm-claude-code`: injects the three HTTP headers that Anthropic requires for subscription tokens to work (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`. Targets the **HTTPRoute** (PostRouting, the default phase). These were originally `requestHeaders` in the backend CRD, but the shipped CRD (v1.5.0) does not declare that field — the AgentgatewayPolicy approach is CRD-validated and functionally identical. Harmless with a plain API key.
+  - `policy-gateway.yaml` - `AgentgatewayPolicy` `llm`. Contains **everything targeting the Gateway in PostRouting** (must be ONE resource — two policies targeting the same Gateway silently overwrite each other, both report ACCEPTED/ATTACHED). Includes: (1) `traffic.oidc` — Zitadel OIDC login for the built-in chat UI (issuer, client id/secret from Crossplane connection secret, redirect URI, scopes); (2) `traffic.jwtAuthentication` (Strict, Zitadel JWKS); (3) `traffic.authorization` (group-based allow via `jwt.groups`); (4) `traffic.rateLimit.global` (two descriptor trees: per-user `[group, user_id]` + per-group ceiling `[group_total]`, tiered by Zitadel group); (5) `frontend.metrics` (adds `llm_group` and `llm_user` labels to Prometheus metrics for per-user/per-group chargeback).
   - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`. **First entry is the verbatim Claude Code identity string** (required for subscription tokens); second is the house preamble. Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — the `*` → `Passthrough` catch-all in `backends.yaml` is opaque and cannot be enriched (so a subscription token over a Passthrough path would miss the identity message and fail).
-  - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. A **single flat descriptor** (`global`/`all`, **2M tokens/day**). With the Anthropic backend this is a **cost ceiling again** (every token bills the shared credential), not just a CPU guardrail — there is no identity at the gateway to tier by (auth is in Open WebUI). Counters reset on Dragonfly restart.
-  - `podmonitor.yaml` - `PodMonitor` (not ServiceMonitor — the deployer's Service exposes only :80, not the :15020 stats port). **MUST carry `release: kube-prometheus-stack`** or it is silently ignored.
-  - `open-webui.yaml` - PVC `open-webui-data` (10Gi RWO Cinder), Deployment `open-webui` (image `ghcr.io/open-webui/open-webui:v0.11.3`, Recreate, port 8080), Service `open-webui:80`. Talks to `llm.agentgateway-system:80/v1` over its **OpenAI-compatible** surface (**never to Anthropic directly**, so prompt enrichment/metrics/rate limit/credential injection all apply); `ENABLE_OLLAMA_API=false`, `ENABLE_OPENAI_API=true`, `OPENAI_API_KEY=unused` (placeholder — the gateway injects the real credential). OIDC client id/secret are read **straight from the Crossplane connection secret** `agentgateway-oidc` via `secretKeyRef` on the `attribute.client_id`/`attribute.client_secret` keys.
-  - `open-webui-secrets.yaml` - ExternalSecret `open-webui-secrets`, `secret-key` ← Vault `secrets-production/openwebui/config` property `secretKey`. **Populate out of band** (`openssl rand -hex 32`).
-  - `open-webui-httproute.yaml` - **Public**: `chat.rpcu.io` on `https-external` → `open-webui:80`, 1800s timeouts + a kgateway `TrafficPolicy` raising `streamIdle` to 1800s. Both are needed and neither implies the other: Open WebUI's Socket.IO at `/ws/socket.io` sits idle between messages, and a long CPU generation can exceed Envoy's 300s default mid-stream.
-
-  **Authentication is Open WebUI's job.** It uses the same argus-owned
-  `groupsClaim` Zitadel Action that the gateway used to authorize on, via
-  `OAUTH_ROLES_CLAIM=groups`:
-
-  | Env var                        | Value                                                                 |
-  | ------------------------------ | --------------------------------------------------------------------- |
-  | `ENABLE_OAUTH_ROLE_MANAGEMENT` | `true` — **without it every user silently lands on the default role** |
-  | `OAUTH_ALLOWED_ROLES`          | `rpcu-admin,public-admin,public-user`                                 |
-  | `OAUTH_ADMIN_ROLES`            | `rpcu-admin,public-admin`                                             |
-
-  Role mapping is **strictly synchronising**: a user is removed from any role
-  not present in their claim at each login, and changes only take effect on
-  re-login.
-
-  > **⚠️ Two Open WebUI traps that make GitOps lie to you.**
-  > (1) Most settings are **"ConfigVars"**: persisted to its SQLite DB on first
-  > boot, after which the environment is **ignored**. You change the manifest,
-  > Flux applies it, and nothing happens. `ENABLE_PERSISTENT_CONFIG=false` keeps
-  > the env authoritative — the tradeoff is that **no Admin Panel change
-  > survives a restart**. Configure this app by editing the manifest, not the UI.
-  > (2) `WEBUI_SECRET_KEY` signs sessions _and_ encrypts stored OAuth tokens. If
-  > unset, the image generates one into the **container** filesystem (not the
-  > PVC), so every restart logs everybody out and makes stored tokens
-  > undecryptable. It comes from Vault precisely so it is stable.
+  - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With the Anthropic backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
+  - `chat-httproute.yaml` - **Public**: `chat.rpcu.io` on `https-external` → `llm:15000` (the built-in chat UI), 1800s idle timeout via kgateway `TrafficPolicy`. No oauth2-proxy — auth is the Zitadel OIDC login handled by the `llm` Gateway's `traffic.oidc` policy.
+  - `podmonitor.yaml` - `PodMonitor` (not ServiceMonitor — the deployer's Service exposes only :80/:15000, not the :15020 stats port). **MUST carry `release: kube-prometheus-stack`** or it is silently ignored.
 
   > **⚠️ Do not "tidy" the Zitadel app.** `appType` is **immutable** in Zitadel.
   > The existing `OIDC_APP_TYPE_WEB` + `OIDC_AUTH_METHOD_TYPE_BASIC` pairing is
-  > exactly what Open WebUI's server-side `authorization_code` flow needs.
-  > Changing it is a delete-and-recreate, and the client_id/secret would rotate
-  > underneath the running Deployment. Note also that the provider does **not**
-  > accept `OIDC_GRANT_TYPE_CLIENT_CREDENTIALS` — it is not in the schema enum.
+  > exactly what the built-in OIDC flow needs. Changing it is a
+  > delete-and-recreate, and the client_id/secret would rotate underneath the
+  > running gateway. Note also that the provider does **not** accept
+  > `OIDC_GRANT_TYPE_CLIENT_CREDENTIALS` — it is not in the schema enum.
 
   > **LLM stack out-of-band prereqs.** (1) Vault
-  > `secrets-production/openwebui/config` key `secretKey`
-  > (`openssl rand -hex 32`). (2) Vault
   > `secrets-production/agentgateway/anthropic` key `apiKey` — an `sk-ant-api…`
   > key or an `sk-ant-oat…` subscription token (`claude setup-token`).
-  > (3) Rate limit counters live only in Dragonfly memory: a restart resets the
+  > (2) Rate limit counters live only in Dragonfly memory: a restart resets the
   > window.
 
 ### infrastructure/ - Production-Specific Glue
@@ -417,7 +391,6 @@ KV-v2 mount `secrets-production`). Paths in use:
 - `secrets-production/jellystat/config` — jellystat Postgres `username`/`password` + `jwtSecret` (bootstrap secret for the CNPG cluster AND app creds; **populate out of band**)
 - `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
 - `secrets-production/palworld/config` — palworld `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY` (playit sidecar) + `DISCORD_WEBHOOK_URL` (Discord lifecycle notifications), all consumed by the `palworld-secrets` ExternalSecret (**populate out of band**)
-- `secrets-production/openwebui/config` — Open WebUI `secretKey` (session/OAuth-token signing key; **populate out of band**: `openssl rand -hex 32`)
 - `secrets-production/agentgateway/anthropic` — the shared Anthropic (Claude) credential, key `apiKey`, read by the `anthropic-credentials` ExternalSecret. Accepts EITHER a pay-as-you-go API key (`sk-ant-api…`) OR a Claude Pro/Max subscription OAuth token (`sk-ant-oat…`, from `claude setup-token`). agentgateway v1.5+ auto-detects the `sk-ant-oat` prefix and switches from `x-api-key` to `Authorization: Bearer`; the Claude Code identity spoof needed for subscription tokens lives in `backends.yaml` + `policy-prompt.yaml`. **Populate out of band.**
 - `secrets-production/zot/htpasswd` — zot CLI basic-auth `htpasswd` file (bcrypt lines, `htpasswd -bBn`; **populate out of band**)
 - `secrets-production/zot/s3` — Ceph S3 `access-key`/`secret-key` for the zot blob store (copy from the argus `rook-ceph` secret `rook-ceph-object-user-rpcu-rpcu`; **populate out of band**)
@@ -444,7 +417,6 @@ KV-v2 mount `secrets-production`). Paths in use:
 | playit-agent      | 1.0.8                                     | `clusters/production/palworld/deploy.yaml`                                                                |
 | palworld-exporter | v0.0.3 (Banh-Canh/palworld-exporter-go)   | `clusters/production/palworld/deploy.yaml`                                                                |
 | zot               | v2.1.19 (image) / 0.1.122 (chart)         | `clusters/production/zot/helmrelease.yaml`                                                                |
-| open-webui        | v0.11.3                                   | `clusters/production/agentgateway/open-webui.yaml`                                                        |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.
@@ -604,34 +576,31 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: September 2026 (Reverted the LLM backend from local Ollama
-inference back to the **Anthropic (Claude) provider**, keeping **Open WebUI**
-as the authenticated chat frontend. Restored `secrets.yaml` (ExternalSecret
-`anthropic-credentials` ← Vault `secrets-production/agentgateway/anthropic` key
-`apiKey`) and rewrote `backends.yaml` to `AgentgatewayBackend anthropic`
-(`provider.anthropic: {}`, `policies.auth.secretRef` → the credential,
-`policies.ai.routes` mapping `/v1/chat/completions`→Completions +
-`/v1/messages`→Messages). Deleted `ollama.yaml`; `httproute.yaml` catch-all now
-targets `anthropic`; `open-webui.yaml` upstream comments corrected (still
-`ENABLE_OPENAI_API=true` → `llm:80/v1`, the gateway converts OpenAI→Anthropic
-and injects the credential). **Added Claude _subscription_ support per
-agentgateway issue #2297**: the Vault `apiKey` may now be EITHER a pay-as-you-go
-API key (`sk-ant-api…`) OR a Claude Pro/Max subscription OAuth token
-(`sk-ant-oat…` from `claude setup-token`). agentgateway v1.5+ auto-detects the
-`sk-ant-oat` prefix and keeps `Authorization: Bearer` (dropping `x-api-key`);
-the Claude Code impersonation Anthropic requires for Sonnet/Opus under a
-subscription is spoofed in-repo — headers `anthropic-beta: oauth-2025-04-20` /
-`user-agent: claude-cli/1.0.0 (external)` / `x-app: cli` via
-`backends.yaml`'s `policies.ai.requestHeaders.set`, and the verbatim first
-system message `"You are Claude Code, Anthropic's official CLI for Claude."` as
-the first `prepend` entry in `policy-prompt.yaml`. Rate limit is now a **cost
-ceiling** again, lowered `20M`→**`2M tokens/day`** (`ratelimit.yaml` +
-`policy-gateway.yaml` comments updated). Gateway-level JWT auth was NOT
-re-added — auth still lives in Open WebUI, the `llm` Gateway stays ClusterIP
-with no public HTTPRoute. Renovate: removed the `ollama/ollama` rule.
+**Last Updated**: September 2026 (Replaced Open WebUI with agentgateway's
+built-in chat UI at `chat.rpcu.io`. The built-in UI runs on port 15000 of the
+proxy pod and handles its own Zitadel OIDC browser login via
+`traffic.oidc` on the `llm` Gateway — no oauth2-proxy, no Open WebUI
+Deployment. Security model is now JWT auth + network isolation: the `llm`
+Gateway enforces `jwtAuthentication` (Strict, Zitadel JWKS) +
+`authorization` (group-based allow via `jwt.groups`) + per-group tiered
+token budgets (`ratelimit.yaml` restored to the nested group→user_id
+descriptors: rpcu-admin 5M/user/day + 20M ceiling, public-admin 1M/5M,
+public-user 100k/1M) + `frontend.metrics` labels for chargeback.
+`chat-httproute.yaml` routes `chat.rpcu.io` from `https-external` (kgateway)
+→ `llm:15000` with 1800s idle timeout. `gateway.yaml` adds port 15000
+listener on the `llm` Gateway and `service.spec.ports` merge patch on the
+deployer's Service. `policy-claude-code.yaml` moved Claude Code identity
+headers from `backends.yaml` `requestHeaders` (not in shipped CRD v1.5.0) to
+`traffic.transformation.request.set` on an `AgentgatewayPolicy` targeting
+the HTTPRoute. Zitadel Oidc app `oidc-agentgateway.yaml` redirect URI
+updated to `/oauth/callback` (was Open WebUI's `/oauth/oidc/callback`).
+Deleted `open-webui.yaml`, `open-webui-secrets.yaml`, `open-webui-httproute.yaml`;
+Vault `secrets-production/openwebui/config` no longer needed. **Manual
+cleanup**: `kubectl delete AgentgatewayBackend/ollama -n agentgateway-system`
+(stale). Renovate: removed `ollama/ollama` rule.
 `kustomize build clusters/production/agentgateway/` passes; prettier clean.
-AGENTS.md: rewrote LLM Gateway section (Anthropic + subscription warning),
-restored `secrets-production/agentgateway/anthropic` in Secrets, dropped ollama
+AGENTS.md: rewrote LLM Gateway section (built-in UI, OIDC, per-group rate
+limits), removed Open WebUI env-var table and traps.
 from Version Pins. — Prior: Pivoted the LLM stack from Anthropic API
 to local CPU inference: added **Ollama** (`ollama/ollama:0.33.3`) as the sole
 inference backend (`clusters/production/agentgateway/ollama.yaml`, model

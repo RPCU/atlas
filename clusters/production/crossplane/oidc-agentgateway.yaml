@@ -1,23 +1,20 @@
-# Zitadel OIDC client for the LLM stack.
+# Zitadel OIDC client for the LLM stack's built-in chat UI.
 #
-# NOTE ON THE NAME: this resource is still called `agentgateway` because
-# renaming it would delete and recreate the Zitadel app — and this Flux
-# Kustomization runs with prune: false, so the old app would be orphaned live in
-# Zitadel rather than cleaned up. The consumer is now Open WebUI
-# (clusters/production/agentgateway/open-webui.yaml), which is what actually
-# performs the login; agentgateway itself no longer authenticates anything.
+# agentgateway's built-in UI (port 15000) handles its own OIDC browser login
+# via `traffic.oidc` on the Gateway — no Open WebUI, no oauth2-proxy. The flow:
+#   browser -> chat.rpcu.io -> agentgateway (no session) -> redirect to Zitadel
+#   -> user authenticates -> Zitadel redirects to /oauth/callback
+#   -> agentgateway exchanges code for JWT (PKCE) -> session cookie set
 #
-# WHY THE APP TYPE IS NOT CHANGING: appType is IMMUTABLE in Zitadel. The
-# existing WEB + BASIC pairing is a confidential client with a client_secret,
-# which is exactly what Open WebUI's server-side authorization_code flow needs,
-# so nothing here has to be recreated. Do not "tidy" this into a NATIVE/PKCE
-# app — that is a delete-and-recreate, and the client_id/secret would change
-# underneath the running Deployment.
+# appType is IMMUTABLE in Zitadel. The existing WEB + BASIC pairing is a
+# confidential client with a client_secret, which is what agentgateway's
+# server-side authorization_code flow needs. Do not change it.
 #
-# Zitadel's provider does NOT accept OIDC_GRANT_TYPE_CLIENT_CREDENTIALS as a
-# grant type value (it is not in the schema's enum); machine-to-machine access
-# is a separate Zitadel concept. authorization_code + refresh_token is all a
-# browser login needs.
+# accessTokenRoleAssertion + idTokenRoleAssertion are load-bearing: the
+# argus-owned `groupsClaim` Zitadel Action flattens project role grants into a
+# `groups` claim, but only for tokens with assertion enabled. agentgateway uses
+# that claim in rate limit descriptors (jwt.groups) for per-group tiering.
+# Turn these off and every user falls through to the smallest tier.
 ---
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
@@ -25,19 +22,11 @@ metadata:
   name: agentgateway
 spec:
   forProvider:
-    # Role assertion is the load-bearing setting. The argus-owned `groupsClaim`
-    # Zitadel Action flattens the user's project role grants into a `groups`
-    # claim, but only for tokens that have assertion enabled. Open WebUI reads
-    # that claim via OAUTH_ROLES_CLAIM=groups to decide who is an admin
-    # (rpcu-admin / public-admin) and who may log in at all. Turn these off and
-    # every user silently lands on the default role.
     accessTokenRoleAssertion: true
     accessTokenType: OIDC_TOKEN_TYPE_JWT
     idTokenRoleAssertion: true
     idTokenUserinfoAssertion: true
 
-    # Confidential server-side client: Open WebUI exchanges the code for tokens
-    # from its pod, never from the browser.
     appType: OIDC_APP_TYPE_WEB
     authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
     grantTypes:
@@ -46,14 +35,9 @@ spec:
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
 
-    # Open WebUI registers its OIDC callback on BOTH of these paths and picks
-    # between them by route-registration order, which is an implementation
-    # detail that could change on upgrade. Registering both here costs nothing
-    # and removes the question. `oidc` is the literal provider slug for a
-    # generic OIDC provider — it is not a placeholder for a name.
+    # agentgateway's OIDC policy redirectURI must match one of these exactly.
     redirectUris:
-      - https://chat.rpcu.io/oauth/oidc/callback
-      - https://chat.rpcu.io/oauth/oidc/login/callback
+      - https://chat.rpcu.io/oauth/callback
     postLogoutRedirectUris:
       - "*"
     additionalOrigins: []
@@ -64,9 +48,8 @@ spec:
     version: OIDC_VERSION_1_0
     orgId: "369994019545117645"
     projectId: "370001231734928333" # administration
-  # Landing this in agentgateway-system puts client_id/client_secret in the same
-  # namespace as the Open WebUI Deployment, which reads them directly as env
-  # vars via secretKeyRef — no copying, no PushSecret round-trip needed.
+  # Connection secret lands in agentgateway-system where the OIDC policy reads
+  # the client_id / client_secret directly.
   writeConnectionSecretToRef:
     name: agentgateway-oidc
     namespace: agentgateway-system

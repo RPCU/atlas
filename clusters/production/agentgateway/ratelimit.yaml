@@ -30,23 +30,16 @@ spec:
       cpu: 500m
       memory: 512Mi
 ---
-# The budget itself. `requests_per_unit` is a TOKEN count, not a request count,
-# because the policy reports the descriptor with unit: Tokens.
+# The budgets themselves. `requests_per_unit` is a TOKEN count, not a request
+# count, because the policy reports these descriptors with unit: Tokens.
 #
-# The key must match the descriptor entry `name` in policy-gateway.yaml exactly
+# Keys must match the descriptor entry `name`s in policy-gateway.yaml exactly
 # (case-sensitive), and `domain` must match the policy's `domain`.
 #
-# ONE flat descriptor, deliberately. The previous config had a nested
-# group/user_id tree plus whole-group ceilings, which required an authenticated
-# caller to key on. Authentication now happens in Open WebUI, so the gateway
-# sees no identity and there is nothing to tier by.
-#
-# The number is a COST ceiling now that the backend is Anthropic: every token
-# bills against the shared credential. 2M tokens/day is a deliberately modest
-# cap for a handful of users on one subscription seat / key — raise it if
-# legitimate use hits the limit, lower it if the bill (or a subscription's fair-
-# use limit) says so. Counters reset on Dragonfly restart (see note above), so
-# a restart temporarily removes the ceiling for the current window.
+# Nested descriptors give "per user, at a limit that depends on their group":
+# the outer key selects the tier, the inner user_id key gets its own counter per
+# distinct value. The flat group_total descriptors are the separate whole-group
+# ceiling.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -56,11 +49,45 @@ data:
   config.yaml: |
     domain: agentgateway
     descriptors:
-      - key: global
-        value: all
+      # ---- Per-user daily token budget, tiered by Zitadel group ----
+      - key: group
+        value: rpcu-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 5000000
+      - key: group
+        value: public-admin
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 1000000
+      - key: group
+        value: public-user
+        descriptors:
+          - key: user_id
+            rate_limit:
+              unit: day
+              requests_per_unit: 100000
+
+      # ---- Whole-group daily ceiling ----
+      - key: group_total
+        value: rpcu-admin
         rate_limit:
           unit: day
-          requests_per_unit: 2000000
+          requests_per_unit: 20000000
+      - key: group_total
+        value: public-admin
+        rate_limit:
+          unit: day
+          requests_per_unit: 5000000
+      - key: group_total
+        value: public-user
+        rate_limit:
+          unit: day
+          requests_per_unit: 1000000
 ---
 apiVersion: apps/v1
 kind: Deployment

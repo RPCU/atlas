@@ -1,0 +1,43 @@
+# Claude Code identity spoofing — required for Claude *subscription* tokens
+# (sk-ant-oat*) to work with Sonnet/Opus (agentgateway issue #2297).
+#
+# Anthropic only honours a subscription token for Sonnet/Opus when the request
+# looks like it came from the Claude Code CLI. The three required tells are:
+#   1. headers anthropic-beta / user-agent / x-app  (THIS FILE)
+#   2. the first system message is verbatim "You are Claude Code, Anthropic's
+#      official CLI for Claude." (policy-prompt.yaml, first prepend entry)
+#   3. agentgateway auto-detects sk-ant-oat and keeps Authorization: Bearer
+#      instead of x-api-key (built-in, no config needed)
+#
+# These headers are injected via traffic.transformation.request.set, which runs
+# AFTER route selection (PostRouting, the default phase) and AFTER the gateway
+# has decided the request goes to the Anthropic backend. The value is a CEL
+# expression; for a static string that is just a string literal: "the-value".
+#
+# These headers are harmless with a plain sk-ant-api key too (Anthropic ignores
+# them for keyed requests), so the same manifest works for both credential types.
+#
+# NOTE: the old approach was requestHeaders in backends.yaml (backend CRD), but
+# the shipped CRD (agentgateway v1.5.0) does not declare that field. This
+# AgentgatewayPolicy approach works identically and is CRD-validated.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-claude-code
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm
+  traffic:
+    transformation:
+      request:
+        set:
+          - name: anthropic-beta
+            value: '"oauth-2025-04-20"'
+          - name: user-agent
+            value: '"claude-cli/1.0.0 (external)"'
+          - name: x-app
+            value: '"cli"'

@@ -1,24 +1,36 @@
-# The agentgateway data plane for LLM traffic.
+# The agentgateway data plane for LLM traffic AND the built-in chat UI.
 #
 # This Gateway uses the "agentgateway" GatewayClass (installed by
 # infrastructure/agentgateway), NOT "kgateway". The agentgateway controller's
 # deployer watches it and provisions a matching proxy Deployment + Service, both
 # named "llm", in this namespace.
 #
-# The Service is ClusterIP and there is NO public HTTPRoute pointing at it.
-# That is a security control, not an oversight: this proxy no longer
-# authenticates anything (see policy-gateway.yaml), so its only protection is
-# being unreachable from outside the cluster. Open WebUI is the authenticated
-# front door and the sole client.
+# The Service exposes three ports:
+#   80     — LLM traffic (OpenAI-compatible /v1/chat/completions)
+#   443    — HTTPS LLM traffic (unused for now, no cert)
+#   15000  — Built-in chat UI (admin port, served by the proxy)
+#
+# The built-in UI handles its own OIDC login via `traffic.jwtAuthentication`
+# on the Gateway — users authenticate with Zitadel directly, no Open WebUI or
+# oauth2-proxy needed. JWT claims (sub, groups) drive per-user/per-group rate
+# limits (see policy-gateway.yaml).
 #
 #   internet -> https-external (kgateway, 172.16.255.10, TLS terminate)
-#            -> open-webui  (Zitadel OIDC login)
-#            -> Service llm:80 (this proxy, ClusterIP)
-#            -> AgentgatewayBackend anthropic -> api.anthropic.com
+#            -> Service llm:15000 (this proxy, ClusterIP, built-in UI)
+#            -> jwtAuthentication (Zitadel JWT validated here)
+#            -> user sees chat UI, picks model, sends message
+#            -> proxy -> AgentgatewayBackend anthropic -> api.anthropic.com
 #               (Claude credential injected here — see backends.yaml)
 #
-# allowedRoutes is "Same" for the same reason: widening it would let any
-# namespace in the cluster attach a route to an unauthenticated LLM endpoint.
+# Two Gateways in series, each doing what it is good at:
+#   https-external (kgateway)  -> public IP, Let's Encrypt wildcard *.rpcu.io,
+#                                 Cloudflare DNS record via ExternalDNS
+#   llm (agentgateway)         -> JWT auth, token budgets, prompt enrichment,
+#                                 provider routing and credential injection
+#
+# allowedRoutes is "Same" because every route that should attach here lives in
+# this namespace. Widening it would let any namespace in the cluster attach a
+# route to a gateway that holds a paid LLM credential.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayParameters
@@ -41,6 +53,14 @@ spec:
   service:
     spec:
       type: ClusterIP
+      # Add port 15000 for the built-in chat UI alongside the deployer's
+      # default ports (80/443). The deployer creates the Service; this patch
+      # adds the UI port via strategic merge.
+      ports:
+        - name: ui
+          port: 15000
+          targetPort: 15000
+          protocol: TCP
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -57,6 +77,12 @@ spec:
   listeners:
     - name: http
       port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: ui
+      port: 15000
       protocol: HTTP
       allowedRoutes:
         namespaces:

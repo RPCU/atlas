@@ -18,13 +18,10 @@
 #                  What is NOT automatic — and what issue #2297 is about — is
 #                  that Anthropic only honours a subscription token for Sonnet /
 #                  Opus when the request looks like it came from the Claude Code
-#                  CLI. Three things make it look that way, and all three are
-#                  set below / in policy-prompt.yaml:
-#                    1. header  anthropic-beta: oauth-2025-04-20   (enables the
-#                       OAuth code path on Anthropic's side)
-#                    2. header  user-agent: claude-cli/1.0.0 (external)  +
-#                       x-app: cli                             (client identity)
-#                    3. the FIRST system message must be exactly
+#                  CLI. Three things make it look that way:
+#                    1. headers anthropic-beta / user-agent / x-app  (set in
+#                       policy-claude-code.yaml via transformation)
+#                    2. the FIRST system message must be exactly
 #                       "You are Claude Code, Anthropic's official CLI for
 #                        Claude." — injected by policy-prompt.yaml's `prepend`.
 #                  Miss any one and Anthropic returns 401/403 on Sonnet/Opus
@@ -34,21 +31,10 @@
 # anthropic-beta/user-agent for keyed requests), so the same manifest works for
 # BOTH credential types — swap only the Vault value.
 #
-# MODEL ENFORCEMENT: provider.anthropic.model PINS every request to this exact
-# model and OVERRIDES whatever the caller (Open WebUI's picker) asked for —
-# agentgateway rewrites the `model` field in the request body before forwarding
-# (crates/llm/src/anthropic.rs: "Model ID to send to Anthropic, overriding the
-# model in the client request"). We pin `claude-haiku-4-5`, the cheapest and
-# least-token-consuming current Claude model ($1/$5 per MTok, 200K context),
-# so no user can pick an expensive Sonnet/Opus model through the shared
-# credential. Remove the `model:` line to let the request body choose again.
-#
-# Bonus with a subscription token (sk-ant-oat): Haiku is lenient about the
-# Claude Code identity spoof (see the header block above), so pinning it is also
-# the most robust choice under a Pro/Max seat. NOTE a subscription bills by
-# fair-use window, not per token — pinning Haiku stretches that window rather
-# than cutting a per-token bill (which only a pay-as-you-go sk-ant-api key has).
-#
+# NOTE: provider.anthropic.model PINS every request to claude-haiku-4-5, the
+# cheapest / least-token-consuming current Claude model ($1/$5 per MTok, 200K
+# ctx). This overrides whatever the caller (Open WebUI's picker) asked for.
+# Remove the `model:` line to let the request body choose again.
 # policies.ai.routes maps URL path suffixes (ends-with) to the API shape the
 # gateway should parse:
 #   /v1/messages          -> Anthropic native (Claude Code, Anthropic SDK)
@@ -79,12 +65,3 @@ spec:
         "/v1/chat/completions": "Completions"
         "/v1/models": "Models"
         "*": "Passthrough"
-      # Claude Code identity spoofing, required for sk-ant-oat subscription
-      # tokens (see the header block above). Applied to the request that leaves
-      # the gateway for api.anthropic.com, AFTER the credential is injected.
-      # `set` replaces any values the client sent.
-      requestHeaders:
-        set:
-          anthropic-beta: "oauth-2025-04-20"
-          user-agent: "claude-cli/1.0.0 (external)"
-          x-app: "cli"
