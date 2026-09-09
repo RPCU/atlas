@@ -75,13 +75,11 @@ spec:
         phase: gateway
         policy:
           jwtAuth:
-            mode: Strict
+            mode: strict
             providers:
               - issuer: https://rpcu-gabeck.eu1.zitadel.cloud
                 jwks:
-                  remote:
-                    url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
-                    cacheDuration: 1h
+                  url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/keys
   # JWT secret: client_id/client_secret from the Crossplane Oidc app's
   # connection secret (kept for potential future use; not consumed by rawConfig
   # since OIDC browser auth is not available on proxy v0.12.0).
