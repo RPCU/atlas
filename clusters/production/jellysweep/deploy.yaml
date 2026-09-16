@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: jellysweep
-          image: ghcr.io/jon4hz/jellysweep:v0.16.0
+          image: ghcr.io/jon4hz/jellysweep:v0.16.1
           args:
             - serve
           resources:
