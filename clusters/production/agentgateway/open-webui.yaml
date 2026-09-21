@@ -60,7 +60,7 @@ spec:
         # first boot. This seeds the empty volume from the image instead.
         # `-n` (no-clobber) makes it a no-op on every subsequent restart.
         - name: seed-data
-          image: ghcr.io/open-webui/open-webui:v0.11.3
+          image: ghcr.io/open-webui/open-webui:v0.11.4
           command:
             - /bin/sh
             - -c
@@ -76,7 +76,7 @@ spec:
               mountPath: /tmp/app-data
       containers:
         - name: open-webui
-          image: ghcr.io/open-webui/open-webui:v0.11.3
+          image: ghcr.io/open-webui/open-webui:v0.11.4
           env:
             # ---- Identity / public URL --------------------------------------
             # WEBUI_URL is what Open WebUI uses to build OAuth redirect URIs.
