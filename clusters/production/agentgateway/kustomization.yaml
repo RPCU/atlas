@@ -13,6 +13,7 @@ resources:
   # identity headers, which are Anthropic-only. It stays on disk (disabled) so a
   # flip back to Anthropic is a one-line re-add here.
   - policy-prompt.yaml
+  - policy-models.yaml
   - ratelimit.yaml
   - podmonitor.yaml
   # Chat frontend: Open WebUI (Zitadel OIDC login, serves chat UI)

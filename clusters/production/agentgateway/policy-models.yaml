@@ -1,0 +1,49 @@
+# Make Open WebUI's model list work against the Gemini backend.
+#
+# Open WebUI polls GET /v1/models on the llm Gateway to populate its model
+# picker. backends.yaml has no route for that path, so it falls through to the
+# `*` -> Passthrough catch-all, and Passthrough forwards the CLIENT path
+# upstream unchanged (set_default_path returns early for Passthrough when no
+# pathPrefix is set — crates/agentgateway/src/llm/mod.rs).
+#
+# That lands on Google's NATIVE list endpoint (generativelanguage.googleapis.
+# com/v1/models), which authenticates with `x-goog-api-key`, while agentgateway
+# injects the Gemini API key as `Authorization: Bearer`. Google answers:
+#
+#   401 UNAUTHENTICATED / reason CREDENTIALS_MISSING /
+#   method google.ai.generativelanguage.v1.ModelService.ListModels
+#
+# Verified straight against Google with the live key:
+#   /v1/models              + Authorization: Bearer AIza… -> 401 (the bug)
+#   /v1/models              + x-goog-api-key: AIza…       -> 200
+#   /v1beta/openai/models   + Authorization: Bearer AIza… -> 200, OpenAI shape
+# The agentgateway source only relocates the key to `x-goog-api-key` for the
+# native GenerateContent/GeminiCountTokens routes, so Passthrough keeps Bearer.
+#
+# Alternatives considered and rejected:
+#   1. map /v1/models to RouteType `Models` — the proxy answers 501
+#      "Route 'Models' not implemented" (httpproxy.rs), so this is a dead end.
+#   2. a second AgentgatewayBackend with `spec.ai.path:
+#      /v1beta/openai/models` — works, but duplicates the whole backend.
+#
+# This policy rewrites ONLY that path onto Google's OpenAI-compatible models
+# endpoint, which accepts `Authorization: Bearer <AIza…>` and answers in the
+# OpenAI shape ({"object":"list","data":[{"id":"models/…"}]}) that Open WebUI
+# parses. Everything else keeps its path+query untouched.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-models
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm
+  traffic:
+    transformation:
+      request:
+        set:
+          - name: ':path'
+            value: 'request.path == "/v1/models" ? "/v1beta/openai/models" : request.pathAndQuery'

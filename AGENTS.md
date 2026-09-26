@@ -317,6 +317,7 @@ the `atlas` Flux Kustomization reconciles):
   - `policy-claude-code.yaml` - **DISABLED, not listed in `kustomization.yaml`.** It was `AgentgatewayPolicy` `llm-claude-code`: the three HTTP headers Anthropic requires for *subscription* tokens (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`, targeted at the **HTTPRoute**. Pure Anthropic/Claude-Code spoofing — meaningless against Gemini, so it stays on disk for a flip back rather than being applied.
   - `policy-ratelimit.yaml` - `AgentgatewayPolicy` `llm-ratelimit`, targets the **Gateway**. The per-group token budgets. Descriptor entries are CEL over the identity headers Open WebUI forwards, NOT over JWT claims: tier = `default(request.headers["x-openwebui-user-groups"], "")` tested with `.contains()` highest-privilege-first, user = `default(request.headers["x-openwebui-user-id"], "anonymous")`. **The `default()` guards are load-bearing**: if an expression errors, agentgateway silently SKIPS the whole descriptor and enforces nothing for that request — a caller who just omits the header would otherwise be unlimited. A third `global` descriptor depends on no header at all, so every request is counted regardless. `unit: Tokens` is what makes the reported cost a token count (the `llm` CEL context is NOT available in a rate limit policy, so `llm.totalTokens` cannot be read). Verified end to end against the Dragonfly counters: `public-user` → own bucket, `rpcu-admin,public-user` → promoted to `rpcu-admin`, no headers → `user_id_anonymous` on the most restrictive tier.
   - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`, currently a **single** house preamble (the verbatim Claude Code identity string that used to lead the list left with the Gemini swap). Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — which is why `backends.yaml` must keep `/v1/chat/completions` → `Completions`; the `*` → `Passthrough` catch-all is opaque and cannot be enriched.
+  - `policy-models.yaml` - `AgentgatewayPolicy` `llm-models`, targets the **HTTPRoute**. Rewrites `:path` `request.pathAndQuery`-preserving from `/v1/models` → `/v1beta/openai/models` via `traffic.transformation`. **This is the only thing that makes Open WebUI's model picker work.** `/v1/models` has no route in `backends.yaml`, so it falls to `*` → `Passthrough`, and Passthrough forwards the **client path unchanged** upstream — landing on Google's native list endpoint, which authenticates with `x-goog-api-key`, while agentgateway injects the key as `Authorization: Bearer` (it only relocates the key for native `GenerateContent`/`CountTokens`). Result: `401 UNAUTHENTICATED / CREDENTIALS_MISSING / ModelService.ListModels`, no models in the UI. Alternatives that do NOT work: mapping to `RouteType: Models` (the proxy returns **501 "not implemented"**), or a second backend with `spec.ai.path` (duplicates the backend). Google's OpenAI-compatible `/v1beta/openai/models` accepts `Authorization: Bearer <AIza…>` and answers in OpenAI shape `{"object":"list","data":[…]}`, which is what the rewrite targets. Chat is unaffected (`/v1/chat/completions` never matches).
   - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With a metered upstream backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
   - `open-webui.yaml` - PVC (10Gi RWO) + Deployment + Service for **Open WebUI** (`ghcr.io/open-webui/open-webui:v0.11.3`), the authenticated chat frontend. Zitadel OIDC login (`OPENID_PROVIDER_URL` → the discovery doc, redirect `/oauth/oidc/callback`, credentials from the Crossplane `agentgateway-oidc` secret). `ENABLE_PERSISTENT_CONFIG: "false"` keeps the env authoritative — otherwise Open WebUI persists settings to SQLite on first boot and silently ignores the manifest forever after (the corollary: **no Admin-Panel change survives a restart**; configure this app by editing the file). An initContainer seeds the PVC from the image's baked-in model cache, without which the app re-downloads ~1GB from HuggingFace on first boot. Identity forwarding for the rate limiter is configured here — see the per-group rate limiting warning above.
   - `open-webui-httproute.yaml` - **Public**: `chat.rpcu.io` on `https-external` → `open-webui:80`. 1800s on both the HTTPRoute `timeouts` and a kgateway `TrafficPolicy` `streamIdle` — the former bounds the whole request, the latter is what actually keeps the Socket.IO stream (`/ws/socket.io`, idle between messages) from being killed. Both are required; neither implies the other.
@@ -617,7 +618,25 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: September 2026 (Swapped the LLM backend from Anthropic to
+**Last Updated**: September 2026 (Fixed Open WebUI's model picker after the
+Gemini swap: `GET /v1/models` fell through `backends.yaml`'s `*` → `Passthrough`
+catch-all, which forwards the **client path unchanged**, so it hit Google's
+**native** `generativelanguage.googleapis.com/v1/models` — an endpoint that
+authenticates with `x-goog-api-key` while agentgateway injects the credential as
+`Authorization: Bearer` (it only relocates `AIza…` keys to `x-goog-api-key` for
+native `GenerateContent`/`GeminiCountTokens` routes). Every model-list call
+returned `401 UNAUTHENTICATED / CREDENTIALS_MISSING /
+google.ai.generativelanguage.v1.ModelService.ListModels`. Verified directly
+against Google with the live key: `Bearer AIza…` → 401 on `/v1/models`, 200 on
+`/v1beta/openai/models`; `x-goog-api-key` → 200 on `/v1/models`.
+`RouteType: Models` is a dead end (proxy answers 501 "not implemented"), so the
+fix is a new `AgentgatewayPolicy` `llm-models` (`policy-models.yaml`) doing a
+`:path` `traffic.transformation` rewrite `/v1/models` →
+`/v1beta/openai/models` (OpenAI-compat, accepts `Bearer AIza…`, returns
+`{"object":"list","data":[…]}`) with `request.pathAndQuery` preserved for
+everything else. Verified live: models 200/61 entries, chat still 200 with
+token usage. Added to `kustomization.yaml`. — Prior: Swapped the LLM backend
+from Anthropic to
 **Google Gemini**. `backends.yaml`: `AgentgatewayBackend anthropic` → `gemini`,
 `provider.gemini.model: gemini-2.5-flash` pin (was `claude-opus-4-8`), auth
 re-enabled on `gemini-credentials`, Anthropic-native routes (`/v1/messages`,
