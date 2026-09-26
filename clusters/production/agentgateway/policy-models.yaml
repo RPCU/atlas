@@ -1,5 +1,29 @@
-# Make Open WebUI's model list work against the Gemini backend.
+# Request-side fixes for the `llm` HTTPRoute: two things Open WebUI needs that
+# agentgateway + Google otherwise get wrong. Both are `traffic.transformation`
+# rewrites applied to every request on this route before it is forwarded.
 #
+# ---- 1. FORCE `accept-encoding: identity` (stops the truncated-stream error) -
+# Open WebUI's HTTP client advertises `Accept-Encoding: gzip, deflate` by
+# default, and agentgateway forwards that header upstream UNCHANGED — its source
+# has no Accept-Encoding handling at all. Google then gzips the SSE stream.
+# Verified straight against Google:
+#
+#   POST /v1beta/openai/chat/completions (stream) + Accept-Encoding: gzip
+#     -> content-type: text/event-stream + content-encoding: gzip  (gzip body!)
+#   POST ... with NO Accept-Encoding
+#     -> text/event-stream, plain ASCII
+#
+# agentgateway cannot parse a gzipped body as SSE: its decoder logs
+# `tokio_sse_codec::decoder_impl: ignoring unknown sse field` on the \x1f\x8b
+# magic bytes, the body is cut short mid-chunk, and you see
+#   `proxy error: error from user's Body stream` in the gateway log, plus on the
+#   client `TransferEncodingError: 400, "Not enough data to satisfy transfer
+#   length header"` (aiohttp in Open WebUI). The answer still renders because
+# the first chunks arrived before the break, which is why the symptom looks
+# like a cosmetic error. Same stream with no Accept-Encoding: clean, ends
+# `[DONE]`. Forcing identity fixes it for every client, not just Open WebUI.
+#
+# ---- 2. REWRITE /v1/models -> /v1beta/openai/models (model picker) ----------
 # Open WebUI polls GET /v1/models on the llm Gateway to populate its model
 # picker. backends.yaml has no route for that path, so it falls through to the
 # `*` -> Passthrough catch-all, and Passthrough forwards the CLIENT path
@@ -13,7 +37,7 @@
 #   401 UNAUTHENTICATED / reason CREDENTIALS_MISSING /
 #   method google.ai.generativelanguage.v1.ModelService.ListModels
 #
-# Verified straight against Google with the live key:
+# Verified with the live key:
 #   /v1/models              + Authorization: Bearer AIza… -> 401 (the bug)
 #   /v1/models              + x-goog-api-key: AIza…       -> 200
 #   /v1beta/openai/models   + Authorization: Bearer AIza… -> 200, OpenAI shape
@@ -26,10 +50,11 @@
 #   2. a second AgentgatewayBackend with `spec.ai.path:
 #      /v1beta/openai/models` — works, but duplicates the whole backend.
 #
-# This policy rewrites ONLY that path onto Google's OpenAI-compatible models
-# endpoint, which accepts `Authorization: Bearer <AIza…>` and answers in the
-# OpenAI shape ({"object":"list","data":[{"id":"models/…"}]}) that Open WebUI
-# parses. Everything else keeps its path+query untouched.
+# The rewrite targets Google's OpenAI-compatible models endpoint, which accepts
+# `Authorization: Bearer <AIza…>` and answers in the OpenAI shape
+# ({"object":"list","data":[{"id":"models/…"}]}) that Open WebUI parses.
+# Everything else keeps its path+query untouched (`request.pathAndQuery`), so
+# chat is unaffected.
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -47,3 +72,5 @@ spec:
         set:
           - name: ':path'
             value: 'request.path == "/v1/models" ? "/v1beta/openai/models" : request.pathAndQuery'
+          - name: accept-encoding
+            value: '"identity"'
