@@ -15,7 +15,7 @@
 # and the descriptors below key their counters on those.
 #
 #   user -> OIDC -> Open WebUI -> (identity headers) -> llm Gateway
-#        -> rate limit check -> anthropic
+#        -> rate limit check -> gemini
 #
 # ---- THREE TRAPS, ALL LOAD-BEARING ----------------------------------------
 # 1. FAIL-OPEN. If an expression errors at request time, agentgateway skips the

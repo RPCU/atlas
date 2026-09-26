@@ -227,7 +227,7 @@ the `atlas` Flux Kustomization reconciles):
 `agentgateway-resources` Flux Kustomization, **not** by the root `atlas` one:
 
 - `agentgateway/` - The whole LLM stack: **Open WebUI** (the chat frontend and
-  the only authenticated entry point), the gateway, and the Anthropic (Claude)
+  the only authenticated entry point), the gateway, and the **Google Gemini**
   backend.
 
   **Traffic path — two Gateways in series, each doing what it is good at:**
@@ -240,9 +240,9 @@ the `atlas` Flux Kustomization reconciles):
            → Open WebUI calls llm:80/v1 with the caller's identity in headers
              (X-OpenWebUI-User-Id + X-OpenWebUI-User-Groups)
            → rate limit check (per-user daily token budget, tiered by group)
-           → prompt enrichment (Claude Code identity spoof for subscription tokens)
-           → AgentgatewayBackend anthropic → api.anthropic.com
-             (the shared Claude credential is injected HERE)
+           → prompt enrichment (house system prompt)
+           → AgentgatewayBackend gemini → generativelanguage.googleapis.com
+             (the shared Gemini credential is injected HERE)
   ```
 
   The `https-external` Gateway is `gatewayClassName: kgateway` and **cannot**
@@ -294,30 +294,30 @@ the `atlas` Flux Kustomization reconciles):
   >    no groups gets the header with an EMPTY string, not a missing header.
   >    Never exact-match the value; test membership.
 
-  > **⚠️ CLAUDE SUBSCRIPTION vs API KEY (agentgateway issue #2297).** The Vault
-  > path `secrets-production/agentgateway/anthropic` key `apiKey` accepts EITHER:
-  > a pay-as-you-go API key (`sk-ant-api…`) OR a Claude Pro/Max **subscription**
-  > OAuth token (`sk-ant-oat…`, from `claude setup-token`). agentgateway v1.5+
-  > detects the `sk-ant-oat` prefix and keeps it as `Authorization: Bearer`
-  > (dropping `x-api-key`) automatically. But Anthropic only honours a
-  > subscription token for Sonnet/Opus when the request looks like it came from
-  > the **Claude Code CLI**. That impersonation has THREE parts, all in this
-  > repo: (1)+(2) the headers `anthropic-beta: oauth-2025-04-20`,
-  > `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli` set via
-  > `traffic.transformation.request.set` in `policy-claude-code.yaml`; (3) the
-  > **first system message must be verbatim** `"You are Claude Code, Anthropic's
-  > official CLI for Claude."`, injected as the first `prepend` entry in
-  > `policy-prompt.yaml`. Reword any of them and Sonnet/Opus start returning
-  > 401/403 under a subscription token (Haiku is lenient; an API key ignores all
-  > three, so the same manifests work for both credential types).
-  - `secrets.yaml` - ExternalSecret `anthropic-credentials`, key `Authorization` ← Vault `secrets-production/agentgateway/anthropic` property `apiKey`. Read by `backends.yaml`'s `policies.auth.secretRef`. Accepts an `sk-ant-api…` key OR an `sk-ant-oat…` subscription token (see the warning above). **Populate out of band.**
+  > **⚠️ GEMINI BACKEND, FLIPPED FROM ANTHROPIC.** The Vault path
+  > `secrets-production/agentgateway/gemini` key `apiKey` holds a **Google AI
+  > Studio API key** (<https://aistudio.google.com/app/apikey>). It is read into
+  > the `gemini-credentials` Secret with the single key `Authorization` (the CRD
+  > rejects any other key name for a non-AWS `secretRef`) and used by
+  > `backends.yaml`'s `policies.auth.secretRef`. **Populate it out of band or
+  > every request 401s** — an empty path means the Secret is never created. The
+  > old `secrets-production/agentgateway/anthropic` path is intentionally left
+  > in Vault, and `policy-claude-code.yaml` is intentionally left on disk
+  > (disabled, absent from `kustomization.yaml`), so the backend can be flipped
+  > back to Anthropic: re-add that file to the kustomization, restore the
+  > Claude Code identity `prepend` in `policy-prompt.yaml`, and swap
+  > `provider.anthropic` back in `backends.yaml`. Nothing else has to change.
+  > **Do not** re-add the Anthropic routes `/v1/messages` +
+  > `/v1/messages/count_tokens` while the backend is Gemini — they are
+  > Anthropic-native and have no Gemini equivalent.
+  - `secrets.yaml` - ExternalSecret `gemini-credentials`, key `Authorization` ← Vault `secrets-production/agentgateway/gemini` property `apiKey`. Read by `backends.yaml`'s `policies.auth.secretRef`. **Populate out of band** (see the warning above).
   - `gateway.yaml` - `AgentgatewayParameters` `llm` (**`service.spec.type: ClusterIP`** — the deployer defaults to LoadBalancer, which would burn an Octavia LB) + Gateway `llm` (class `agentgateway`, HTTP :80 only, `allowedRoutes.namespaces.from: Same`). **No `rawConfig`, no auth** — hand-rolled rawConfig policies crash proxy v0.12.0 ("exactly 1 policy", NamespacedHostname, unknown field `oidc`). Everything policy-related lives in the `AgentgatewayPolicy` CRDs. The controller's deployer creates the `llm` Deployment + Service from this.
-  - `backends.yaml` - `AgentgatewayBackend` `anthropic`. **`provider.anthropic.model: claude-haiku-4-5`** PINS every request to the cheapest/least-token-consuming current Claude model ($1/$5 per MTok, 200K ctx), **overriding** whatever the chat UI's picker sends — so no user can burn the shared credential on Sonnet/Opus. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `anthropic-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (the UI's OpenAI dialect, converted to Anthropic `/v1/messages`) and `/v1/messages` → Messages (native). Haiku is also lenient about the Claude Code identity spoof, so it is the most robust pin under a subscription token.
-  - `httproute.yaml` - A plain **catch-all** → the `anthropic` backend. The old `x-model` header matching (and the PreRouting policy that fed it) was deleted: it only earns its keep with two or more providers. The file documents how to re-add a per-provider rule above the catch-all.
-  - `policy-claude-code.yaml` - `AgentgatewayPolicy` `llm-claude-code`: injects the three HTTP headers that Anthropic requires for subscription tokens to work (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`. Targets the **HTTPRoute** (PostRouting, the default phase). These were originally `requestHeaders` in the backend CRD, but the shipped CRD (v1.5.0) does not declare that field — the AgentgatewayPolicy approach is CRD-validated and functionally identical. Harmless with a plain API key.
+  - `backends.yaml` - `AgentgatewayBackend` `gemini`. **`provider.gemini.model: gemini-2.5-flash`** PINS every request to that model, **overriding** whatever the chat UI's picker sends — so no user can burn the shared credential on an expensive model. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `gemini-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (the UI's OpenAI dialect, converted to Gemini's `generateContent`) and `*` → Passthrough. **The `Completions` route is load-bearing**: it is the only route type agentgateway parses, and parsing is what unlocks prompt enrichment, token counting for the rate limit (`unit: Tokens`) and cost metrics — `Passthrough` applies no policies at all.
+  - `httproute.yaml` - A plain **catch-all** → the `gemini` backend. The old `x-model` header matching (and the PreRouting policy that fed it) was deleted: it only earns its keep with two or more providers. The file documents how to re-add a per-provider rule above the catch-all.
+  - `policy-claude-code.yaml` - **DISABLED, not listed in `kustomization.yaml`.** It was `AgentgatewayPolicy` `llm-claude-code`: the three HTTP headers Anthropic requires for *subscription* tokens (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`, targeted at the **HTTPRoute**. Pure Anthropic/Claude-Code spoofing — meaningless against Gemini, so it stays on disk for a flip back rather than being applied.
   - `policy-ratelimit.yaml` - `AgentgatewayPolicy` `llm-ratelimit`, targets the **Gateway**. The per-group token budgets. Descriptor entries are CEL over the identity headers Open WebUI forwards, NOT over JWT claims: tier = `default(request.headers["x-openwebui-user-groups"], "")` tested with `.contains()` highest-privilege-first, user = `default(request.headers["x-openwebui-user-id"], "anonymous")`. **The `default()` guards are load-bearing**: if an expression errors, agentgateway silently SKIPS the whole descriptor and enforces nothing for that request — a caller who just omits the header would otherwise be unlimited. A third `global` descriptor depends on no header at all, so every request is counted regardless. `unit: Tokens` is what makes the reported cost a token count (the `llm` CEL context is NOT available in a rate limit policy, so `llm.totalTokens` cannot be read). Verified end to end against the Dragonfly counters: `public-user` → own bucket, `rpcu-admin,public-user` → promoted to `rpcu-admin`, no headers → `user_id_anonymous` on the most restrictive tier.
-  - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`. **First entry is the verbatim Claude Code identity string** (required for subscription tokens); second is the house preamble. Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — the `*` → `Passthrough` catch-all in `backends.yaml` is opaque and cannot be enriched (so a subscription token over a Passthrough path would miss the identity message and fail).
-  - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With the Anthropic backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
+  - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`, currently a **single** house preamble (the verbatim Claude Code identity string that used to lead the list left with the Gemini swap). Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — which is why `backends.yaml` must keep `/v1/chat/completions` → `Completions`; the `*` → `Passthrough` catch-all is opaque and cannot be enriched.
+  - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With a metered upstream backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
   - `open-webui.yaml` - PVC (10Gi RWO) + Deployment + Service for **Open WebUI** (`ghcr.io/open-webui/open-webui:v0.11.3`), the authenticated chat frontend. Zitadel OIDC login (`OPENID_PROVIDER_URL` → the discovery doc, redirect `/oauth/oidc/callback`, credentials from the Crossplane `agentgateway-oidc` secret). `ENABLE_PERSISTENT_CONFIG: "false"` keeps the env authoritative — otherwise Open WebUI persists settings to SQLite on first boot and silently ignores the manifest forever after (the corollary: **no Admin-Panel change survives a restart**; configure this app by editing the file). An initContainer seeds the PVC from the image's baked-in model cache, without which the app re-downloads ~1GB from HuggingFace on first boot. Identity forwarding for the rate limiter is configured here — see the per-group rate limiting warning above.
   - `open-webui-httproute.yaml` - **Public**: `chat.rpcu.io` on `https-external` → `open-webui:80`. 1800s on both the HTTPRoute `timeouts` and a kgateway `TrafficPolicy` `streamIdle` — the former bounds the whole request, the latter is what actually keeps the Socket.IO stream (`/ws/socket.io`, idle between messages) from being killed. Both are required; neither implies the other.
   - `open-webui-secrets.yaml` - ExternalSecret `open-webui-secrets`, `secret-key` ← Vault `secrets-production/openwebui/config` property `secretKey`. `WEBUI_SECRET_KEY` signs sessions AND encrypts stored OAuth tokens; if unset the image generates one into the container filesystem, so every restart would log everyone out. **Populate out of band** (`openssl rand -hex 32`).
@@ -331,8 +331,9 @@ the `atlas` Flux Kustomization reconciles):
   > `OIDC_GRANT_TYPE_CLIENT_CREDENTIALS` — it is not in the schema enum.
 
   > **LLM stack out-of-band prereqs.** (1) Vault
-  > `secrets-production/agentgateway/anthropic` key `apiKey` — an `sk-ant-api…`
-  > key or an `sk-ant-oat…` subscription token (`claude setup-token`).
+  > `secrets-production/agentgateway/gemini` key `apiKey` — a Google AI Studio
+  > API key (<https://aistudio.google.com/app/apikey>). Do this BEFORE the Flux
+  > sync, or the backend has no credential.
   > (2) Rate limit counters live only in Dragonfly memory: a restart resets the
   > window.
 
@@ -431,7 +432,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 - `secrets-production/jellystat/config` — jellystat Postgres `username`/`password` + `jwtSecret` (bootstrap secret for the CNPG cluster AND app creds; **populate out of band**)
 - `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
 - `secrets-production/palworld/config` — palworld `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY` (playit sidecar) + `DISCORD_WEBHOOK_URL` (Discord lifecycle notifications), all consumed by the `palworld-secrets` ExternalSecret (**populate out of band**)
-- `secrets-production/agentgateway/anthropic` — the shared Anthropic (Claude) credential, key `apiKey`, read by the `anthropic-credentials` ExternalSecret. Accepts EITHER a pay-as-you-go API key (`sk-ant-api…`) OR a Claude Pro/Max subscription OAuth token (`sk-ant-oat…`, from `claude setup-token`). agentgateway v1.5+ auto-detects the `sk-ant-oat` prefix and switches from `x-api-key` to `Authorization: Bearer`; the Claude Code identity spoof needed for subscription tokens lives in `backends.yaml` + `policy-prompt.yaml`. **Populate out of band.**
+- `secrets-production/agentgateway/gemini` — the shared Google AI Studio API key, key `apiKey`, read by the `gemini-credentials` ExternalSecret into the single `Authorization` key the CRD requires for a non-AWS `policies.auth.secretRef`. **Populate out of band** (<https://aistudio.google.com/app/apikey>). The retired `secrets-production/agentgateway/anthropic` path is left in place for flipping the backend back.
 - `secrets-production/zot/htpasswd` — zot CLI basic-auth `htpasswd` file (bcrypt lines, `htpasswd -bBn`; **populate out of band**)
 - `secrets-production/zot/s3` — Ceph S3 `access-key`/`secret-key` for the zot blob store (copy from the argus `rook-ceph` secret `rook-ceph-object-user-rpcu-rpcu`; **populate out of band**)
 - `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent,jellystat,jellysweep,zot,...}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read. (`zot/oidc` is additionally read BACK to template zot's OIDC credentials file.)
@@ -615,6 +616,25 @@ Atlas is the **application layer** for RPCU's production cluster:
 ✅ Private OCI registry (**zot**, ns `registry`, `zot.rpcu.io`) — blobs in argus Ceph S3, Zitadel OIDC web login + htpasswd CLI login, group-based ACL
 
 ---
+
+**Last Updated**: September 2026 (Swapped the LLM backend from Anthropic to
+**Google Gemini**. `backends.yaml`: `AgentgatewayBackend anthropic` → `gemini`,
+`provider.gemini.model: gemini-2.5-flash` pin (was `claude-opus-4-8`), auth
+re-enabled on `gemini-credentials`, Anthropic-native routes (`/v1/messages`,
+`/v1/messages/count_tokens`) dropped and `/v1/chat/completions` → `Completions`
+restored — HEAD had it commented out onto `*` → `Passthrough`, which per the
+upstream docs applies NO policies and therefore silently disabled prompt
+enrichment and token counting for `unit: Tokens` rate limits.
+`secrets.yaml`: ExternalSecret `anthropic-credentials` → `gemini-credentials`,
+Vault `secrets-production/agentgateway/gemini` key `apiKey` (**populate out of
+band**: Google AI Studio key, BEFORE the sync, or every request 401s; the old
+`secrets-production/agentgateway/anthropic` path is left in Vault for flipping
+back). `policy-claude-code.yaml` is now **disabled** (removed from
+`kustomization.yaml`, file kept on disk) and its Claude Code identity
+`prepend` was removed from `policy-prompt.yaml` (house preamble only).
+`httproute.yaml` backendRef → `gemini`; comment-only updates in `gateway.yaml`,
+`policy-ratelimit.yaml`, `open-webui.yaml`. This file: LLM Gateway section,
+Vault path list and out-of-band prereqs rewritten.)
 
 **Last Updated**: September 2026 (Corrected the LLM chat UI auth architecture.
 **Key discovery: agentgateway's native OIDC browser login is standalone-mode

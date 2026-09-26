@@ -1,67 +1,56 @@
-# The LLM backend: Anthropic (Claude), reached with ONE shared credential from
+# The LLM backend: Google Gemini, reached with ONE shared credential from
 # secrets.yaml. Open WebUI (and any OpenAI-SDK client) calls the gateway on
-# /v1/chat/completions; agentgateway converts that to Anthropic's /v1/messages
-# and injects the credential.
+# /v1/chat/completions; agentgateway converts that to Gemini's native
+# generateContent endpoint and injects the credential.
 #
-# ---- MAKING A CLAUDE *SUBSCRIPTION* WORK (issue agentgateway#2297) ----------
-# There are two kinds of Anthropic credential and they are NOT interchangeable:
+# ---- CREDENTIAL -------------------------------------------------------------
+# One AI Studio API key (<https://aistudio.google.com/app/apikey>), stored in
+# Vault at secrets-production/agentgateway/gemini (property `apiKey`) and
+# surfaced as the `gemini-credentials` Secret. The gateway reads it from
+# policies.auth.secretRef — `Authorization` is the ONLY key the CRD accepts for
+# a non-AWS secretRef, which is what secrets.yaml produces.
 #
-#   sk-ant-api...  A pay-as-you-go API key. Works out of the box: agentgateway
-#                  puts it in the `x-api-key` header and Anthropic bills usage.
+# ---- MODEL PIN --------------------------------------------------------------
+# NOTE: provider.gemini.model PINS every request to gemini-2.5-flash, which
+# overrides whatever the caller (Open WebUI's picker) asked for. Remove the
+# `model:` line to let the request body choose again.
 #
-#   sk-ant-oat...  A Claude Pro/Max SUBSCRIPTION OAuth token (from
-#                  `claude setup-token`). agentgateway v1.5+ already detects the
-#                  `sk-ant-oat` prefix and keeps it as `Authorization: Bearer`
-#                  instead of `x-api-key` (crates/llm/src/anthropic.rs +
-#                  llm/mod.rs set_required_fields). That part is automatic.
-#
-#                  What is NOT automatic — and what issue #2297 is about — is
-#                  that Anthropic only honours a subscription token for Sonnet /
-#                  Opus when the request looks like it came from the Claude Code
-#                  CLI. Three things make it look that way:
-#                    1. headers anthropic-beta / user-agent / x-app  (set in
-#                       policy-claude-code.yaml via transformation)
-#                    2. the FIRST system message must be exactly
-#                       "You are Claude Code, Anthropic's official CLI for
-#                        Claude." — injected by policy-prompt.yaml's `prepend`.
-#                  Miss any one and Anthropic returns 401/403 on Sonnet/Opus
-#                  (Haiku is more lenient, which makes this easy to misdiagnose).
-#
-# These headers are harmless with a plain sk-ant-api key too (Anthropic ignores
-# anthropic-beta/user-agent for keyed requests), so the same manifest works for
-# BOTH credential types — swap only the Vault value.
-#
-# NOTE: provider.anthropic.model PINS every request to claude-haiku-4-5, the
-# cheapest / least-token-consuming current Claude model ($1/$5 per MTok, 200K
-# ctx). This overrides whatever the caller (Open WebUI's picker) asked for.
-# Remove the `model:` line to let the request body choose again.
+# ---- ROUTES -----------------------------------------------------------------
 # policies.ai.routes maps URL path suffixes (ends-with) to the API shape the
 # gateway should parse:
-#   /v1/messages          -> Anthropic native (Claude Code, Anthropic SDK)
-#   /v1/chat/completions  -> OpenAI-compatible (Open WebUI, LangChain, OpenAI SDK)
-# Serving both dialects on one host is what lets Open WebUI (OpenAI shape) and a
-# raw Claude Code client (Anthropic shape) share this one backend.
+#   /v1/chat/completions  -> Completions   (Open WebUI, LangChain, OpenAI SDK)
+#   *                     -> Passthrough   (everything else, forwarded as-is)
+# Serving the OpenAI dialect on one host is what lets Open WebUI share this one
+# backend with any other OpenAI-SDK client.
+#
+# `Completions` is load-bearing: it is the route type agentgateway actually
+# parses, and parsing is what unlocks prompt enrichment (policy-prompt.yaml),
+# token counting for the rate limit (policy-ratelimit.yaml, `unit: Tokens`) and
+# cost metrics. `Passthrough` applies NO policies at all — never move
+# /v1/chat/completions onto it.
+#
+# The Anthropic-native routes that used to live here (/v1/messages,
+# /v1/messages/count_tokens) are gone: Gemini has no equivalent. So is the
+# Claude Code identity spoof — policy-claude-code.yaml is disabled in
+# kustomization.yaml (the file is kept for a flip back to Anthropic).
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
-  name: anthropic
+  name: gemini
   namespace: agentgateway-system
 spec:
   ai:
     provider:
-      anthropic:
-        # Cheapest / least-token-consuming current Claude model. Pinning it here
-        # overrides the client's requested model. See the note above.
-        model: claude-opus-4-8
+      gemini:
+        # Pin overrides the client's requested model. See the note above.
+        model: gemini-2.5-flash
   policies:
-    # auth:
-    #   secretRef:
-    #     name: anthropic-credentials
+    auth:
+      secretRef:
+        name: gemini-credentials
     ai:
       routes:
-        '/v1/messages': 'Messages'
-        '/v1/messages/count_tokens': 'AnthropicTokenCount'
-        # '/v1/chat/completions': 'Completions'
-        # '/v1/models': 'Models'
+        '/v1/chat/completions': 'Completions'
+        # '/v1/models': 'Passthrough'
         '*': 'Passthrough'

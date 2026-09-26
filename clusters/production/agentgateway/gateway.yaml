@@ -10,7 +10,7 @@
 #            -> chat.rpcu.io HTTPRoute -> open-webui:8080
 #            -> Open WebUI (Zitadel OIDC browser login, serves chat UI)
 #            -> llm:80 (LLM API proxy, global rate limiting)
-#            -> AgentgatewayBackend anthropic -> api.anthropic.com
+#            -> AgentgatewayBackend gemini -> generativelanguage.googleapis.com
 #
 # The llm Gateway has NO auth, NO OIDC, NO per-group rate limiting.
 # Open WebUI handles authentication. The Gateway only does global rate limiting.

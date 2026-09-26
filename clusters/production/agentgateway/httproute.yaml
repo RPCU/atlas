@@ -1,9 +1,9 @@
 # Routing on the agentgateway proxy itself.
 #
-# There is exactly one backend (anthropic), so this is a catch-all: every path
-# on the internal `llm` Gateway goes to the Anthropic backend, which decides
+# There is exactly one backend (gemini), so this is a catch-all: every path
+# on the internal `llm` Gateway goes to the Gemini backend, which decides
 # how to parse it from backends.yaml's `routes` map (/v1/chat/completions from
-# Open WebUI -> Completions -> converted to Anthropic /v1/messages).
+# Open WebUI -> Completions -> converted to Gemini's generateContent).
 #
 # This route is only reachable from inside the cluster. The `llm` Gateway is
 # ClusterIP and, since authentication lives in Open WebUI (chat.rpcu.io), there
@@ -35,6 +35,6 @@ spec:
       sectionName: http
   rules:
     - backendRefs:
-        - name: anthropic
+        - name: gemini
           group: agentgateway.dev
           kind: AgentgatewayBackend

@@ -1,3 +1,15 @@
+# ⚠️ DISABLED — NOT listed in kustomization.yaml, so this policy is not applied.
+#
+# The backend is Gemini now (backends.yaml), and every header below is
+# Anthropic-specific: they only exist so a Claude *subscription* token
+# (sk-ant-oat*) is accepted for Sonnet/Opus (agentgateway issue #2297), which is
+# moot against generativelanguage.googleapis.com. The matching system-message
+# leg of the spoof was removed from policy-prompt.yaml.
+#
+# Re-list this file in kustomization.yaml (and restore the prepend in
+# policy-prompt.yaml) if the backend is ever flipped back to Anthropic.
+#
+# ---- HOW IT WORKED ----------------------------------------------------------
 # Claude Code identity spoofing — required for Claude *subscription* tokens
 # (sk-ant-oat*) to work with Sonnet/Opus (agentgateway issue #2297).
 #

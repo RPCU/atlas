@@ -4,7 +4,7 @@
 #   internet -> https-external (kgateway, TLS, chat.rpcu.io)
 #            -> open-webui  (Zitadel OIDC login happens HERE)
 #            -> llm:80      (agentgateway, no auth, ClusterIP)
-#            -> api.anthropic.com  (credential injected at the gateway)
+#            -> generativelanguage.googleapis.com  (credential injected at the gateway)
 #
 # Authentication used to live on the gateway as a Zitadel JWT check. It lives
 # here now, which is why nothing downstream authenticates anything.
@@ -171,8 +171,8 @@ spec:
             # ---- Upstream model API ----------------------------------------
             # Points at the agentgateway Service in this namespace over its
             # OpenAI-compatible surface (/v1/chat/completions). The gateway
-            # converts that to Anthropic's /v1/messages and injects the real
-            # Claude credential (backends.yaml), so Open WebUI never sees it and
+            # converts that to Gemini's native generateContent and injects the
+            # real Gemini key (backends.yaml), so Open WebUI never sees it and
             # prompt enrichment, metrics and the rate limit all still apply.
             - name: ENABLE_OLLAMA_API
               value: 'false'
@@ -181,7 +181,7 @@ spec:
             - name: OPENAI_API_BASE_URL
               value: http://llm.agentgateway-system.svc:80/v1
             # The gateway requires no credential from Open WebUI (it injects the
-            # Anthropic one itself). Open WebUI still sends a bearer token, so
+            # Gemini one itself). Open WebUI still sends a bearer token, so
             # this is a placeholder rather than an empty string.
             # - name: OPENAI_API_KEY
             #   value: unused
