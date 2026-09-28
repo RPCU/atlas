@@ -20,11 +20,12 @@ spec:
         - name: radarr
           image: ghcr.io/linuxserver/radarr:6.4.4-nightly
           resources:
+            # 72h Mimir (2026-09-28): mem p95 207Mi / max 251Mi, CPU p95 8m.
             requests:
-              memory: 128Mi
-              cpu: 25m
+              memory: 208Mi
+              cpu: 10m
             limits:
-              memory: 500Mi
+              memory: 512Mi
           ports:
             - name: radarr
               containerPort: 7878

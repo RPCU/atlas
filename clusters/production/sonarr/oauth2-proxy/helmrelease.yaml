@@ -43,11 +43,12 @@ spec:
             name: sonarr-oauth2-proxy-secrets
             key: cookie-secret
     resources:
+      # 72h Mimir (2026-09-28): ~6-9Mi, <1m CPU.
       limits:
         memory: 64Mi
       requests:
-        cpu: 10m
-        memory: 32Mi
+        cpu: 5m
+        memory: 16Mi
     proxyVarsAsSecrets: false
     replicaCount: 1
     podDisruptionBudget:

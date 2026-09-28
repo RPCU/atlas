@@ -24,9 +24,10 @@ spec:
   logging:
     format: json
   resources:
+    # 72h Mimir (2026-09-28): ~40Mi, <1m CPU (low-traffic LLM proxy).
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 10m
+      memory: 48Mi
     limits:
       memory: 512Mi
   deployment: {}

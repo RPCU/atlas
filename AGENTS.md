@@ -581,6 +581,15 @@ RWO volumes should omit `storageClassName` (cluster default = Cinder).
   failures here
 - `kustomize build clusters/production/` must succeed before pushing
 - Verify reconciliation: `flux get kustomizations -A` on the production cluster
+- **Resource sizing policy** (3rd pass, 2026-09-28, 72h Mimir): mem request ≈
+  72h p95, mem limit ≈ 2× 72h max (≥1.25× max), CPU request ≈ p95, **no CPU
+  limits** — EXCEPT the two Dragonfly instances (`zot/dragonfly.yaml`,
+  `agentgateway/ratelimit.yaml`): Dragonfly derives its thread count from the
+  CPU quota and maxmemory from the mem limit (≥256MiB/thread), so it keeps
+  500m/512Mi limits or refuses to boot. palworld's mem request sits at ~72h max
+  (player-join spikes). Kamaji tenant apiservers (kcp-*) are sized in argus
+  (`cluster-api-templates`), not here. Both workers fit all requests alone
+  (N-1 OK, ~14Gi of 14.6Gi — tight).
 
 ### Helpful Commands
 
@@ -618,7 +627,12 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: September 2026 (Fixed Open WebUI's model picker after the
+**Last Updated**: 2026-09-28 (Third requests/limits pass from 72h Mimir
+p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld
+750m/2Gi→300m/1536Mi, qbittorrent limit 3Gi→1Gi, zot, dragonflies, open-webui
+512→768Mi, agentgateway, cnpg operator + jellystat postgres, external-dns (was
+BestEffort), kamaji-etcd 50m/256Mi→85m/384Mi+1Gi limit; CPU limits removed
+except Dragonfly; see "Resource sizing policy" in §5.) — Prior: September 2026 (Fixed Open WebUI's model picker after the
 Gemini swap: `GET /v1/models` fell through `backends.yaml`'s `*` → `Passthrough`
 catch-all, which forwards the **client path unchanged**, so it hit Google's
 **native** `generativelanguage.googleapis.com/v1/models` — an endpoint that

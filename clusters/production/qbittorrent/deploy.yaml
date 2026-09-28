@@ -30,11 +30,14 @@ spec:
           securityContext:
             privileged: true
           resources:
+            # 72h Mimir (2026-09-28): mem p95 138Mi / max 151Mi, CPU p95 8m
+            # (max 69m). Limit keeps ~7x max for libtorrent's disk cache when
+            # a large batch downloads.
             requests:
-              memory: 1Gi
-              cpu: 100m
+              memory: 144Mi
+              cpu: 10m
             limits:
-              memory: 3Gi
+              memory: 1Gi
           ports:
             - name: qbittorrent
               containerPort: 8080

@@ -35,12 +35,14 @@ spec:
                     rest-cli shutdown '{"waittime": 10, "message": "Server is restarting now."}'
           resources:
             # Important workload (live game server) - no limits: an OOM-kill
-            # or CPU throttle drops every connected player. Requests sized to
-            # the observed steady-state baseline (~1.4-1.9Gi RSS, ~450m-860m
-            # CPU with players on) rather than the old 4Gi/2-core placeholder.
+            # or CPU throttle drops every connected player. 72h Mimir
+            # (2026-09-28): mem p95 1.22Gi / max 1.42Gi, CPU p95 285m / max
+            # 302m. Memory request sits at ~max (not p95) so a player-join
+            # spike is covered by the reservation; CPU bursts above the
+            # request freely (no limit).
             requests:
-              memory: 2Gi
-              cpu: 750m
+              memory: 1536Mi
+              cpu: 300m
           ports:
             - name: game
               containerPort: 8211
@@ -80,8 +82,8 @@ spec:
           image: ghcr.io/playit-cloud/playit-agent:1.0.10
           resources:
             requests:
-              memory: 64Mi
-              cpu: 10m
+              memory: 32Mi
+              cpu: 5m
             limits:
               memory: 128Mi
           env:
@@ -114,8 +116,8 @@ spec:
               value: ':18212'
           resources:
             requests:
-              memory: 64Mi
-              cpu: 10m
+              memory: 32Mi
+              cpu: 5m
             limits:
               memory: 128Mi
           volumeMounts:

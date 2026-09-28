@@ -26,7 +26,11 @@ spec:
           value:
             kamaji-etcd:
               clusterDomain: production.local
+              # 72h Mimir (2026-09-28), max across the 3 members: mem p95
+              # 358Mi / max 408Mi (above the old 256Mi request), CPU p95 85m.
               resources:
                 requests:
-                  cpu: 50m
-                  memory: 256Mi
+                  cpu: 85m
+                  memory: 384Mi
+                limits:
+                  memory: 1Gi

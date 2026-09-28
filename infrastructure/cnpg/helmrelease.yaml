@@ -23,9 +23,9 @@ spec:
       create: true
     resources:
       requests:
-        # Low-churn operator: 72h peak ~5m CPU (Mimir). 100m was ~20x peak;
-        # 50m keeps ample headroom. CPU request-only (no CPU limit).
-        cpu: 50m
-        memory: 200Mi
+        # Low-churn operator. 72h Mimir (2026-09-28): mem p95 76Mi / max
+        # 95Mi, CPU p95 5m. CPU request-only (no CPU limit).
+        cpu: 5m
+        memory: 80Mi
       limits:
-        memory: 200Mi
+        memory: 256Mi

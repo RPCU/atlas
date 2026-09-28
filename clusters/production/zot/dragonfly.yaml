@@ -16,10 +16,13 @@ spec:
   replicas: 1
   resources:
     requests:
-      # Cache backing a single-replica zot: 72h peak ~7m CPU (Mimir).
-      # 100m was ~14x peak; 50m keeps headroom. Limit kept at 500m.
-      cpu: 50m
-      memory: 256Mi
+      # 72h Mimir (2026-09-28): mem p95 46Mi / max 50Mi, CPU p95 9m.
+      cpu: 10m
+      memory: 64Mi
     limits:
+      # Functional, keep both: Dragonfly derives its thread count from the
+      # cgroup CPU quota and --maxmemory from the memory limit, and needs
+      # >=256MiB per thread. Dropping the CPU limit on a 3-vCPU node means
+      # 3 threads x 256MiB > 512MiB and the pod refuses to start.
       cpu: 500m
       memory: 512Mi

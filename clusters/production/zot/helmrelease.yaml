@@ -60,12 +60,12 @@ spec:
         value: /etc/zot/certs/ca.crt
     resources:
       requests:
-        # Registry idles low: 72h peak ~3m CPU (Mimir). 100m was ~30x peak;
-        # 50m keeps headroom for pull bursts. Limit kept at 1 core.
-        cpu: 50m
-        memory: 256Mi
+        # Registry idles low. 72h Mimir (2026-09-28): mem p95/max 57Mi, CPU
+        # p95 3m. No CPU limit (pull bursts borrow idle CPU); memory limit
+        # left at 512Mi for large-layer pushes / GC.
+        cpu: 5m
+        memory: 64Mi
       limits:
-        cpu: "1"
         memory: 512Mi
     # zot config: S3 storage, Redis dedup cache, Zitadel OIDC + htpasswd auth,
     # UI/search/metrics extensions. The htpasswd file is mounted at /secret from

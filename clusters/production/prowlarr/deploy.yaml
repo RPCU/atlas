@@ -20,11 +20,12 @@ spec:
         - name: prowlarr
           image: ghcr.io/linuxserver/prowlarr:2.6.5-nightly
           resources:
+            # 72h Mimir (2026-09-28): mem p95 186Mi / max 193Mi, CPU p95 5m.
             requests:
-              memory: 128Mi
-              cpu: 25m
+              memory: 192Mi
+              cpu: 5m
             limits:
-              memory: 500Mi
+              memory: 448Mi
           ports:
             - name: prowlarr
               containerPort: 9696
@@ -80,12 +81,14 @@ spec:
               value: 'info'
           resources:
             requests:
-              memory: 256Mi
-              cpu: 50m
+              # 72h Mimir (2026-09-28): mem p95 163Mi / max 439Mi, CPU p95 1m
+              # (max 33m) - idles until a Cloudflare challenge is solved.
+              memory: 176Mi
+              cpu: 5m
             limits:
-              # Headless-browser workload; observed up to ~464Mi in an 8h
-              # sample so limit carries generous headroom over that.
-              memory: 900Mi
+              # Headless-browser workload: spikes to ~2.7x p95 while a
+              # challenge renders, so the limit keeps ~2x the observed max.
+              memory: 896Mi
       volumes:
         - name: config
           persistentVolumeClaim:
