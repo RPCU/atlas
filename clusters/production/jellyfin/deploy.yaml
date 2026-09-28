@@ -29,10 +29,13 @@ spec:
             # Important workload (primary media server) - no limits: transcode
             # bursts observed up to ~3.3 CPU cores in an 8h sample and should
             # never be throttled/OOM-killed. Requests only, sized to the
-            # observed steady-state baseline (~500Mi RSS, low idle CPU).
+            # observed steady-state baseline. 72h Mimir (2026-09-28): mem p95
+            # 618Mi / max 960Mi, CPU p95 8m / max 1.4 cores. CPU request stays
+            # above p95 so transcodes keep a fair cpu.weight when the node is
+            # contended.
             requests:
-              memory: 1Gi
-              cpu: 200m
+              memory: 640Mi
+              cpu: 100m
               # TODO: Adapt GPU
               # gpu.intel.com/i915: 1
           image: docker.io/jellyfin/jellyfin:10.11.11

@@ -20,11 +20,12 @@ spec:
         - name: jellystat
           image: cyfershepard/jellystat:1.1.12
           resources:
+            # 72h Mimir (2026-09-28): mem p95 123Mi / max 161Mi, CPU p95 4m.
             requests:
               memory: 128Mi
-              cpu: 25m
+              cpu: 5m
             limits:
-              memory: 400Mi
+              memory: 384Mi
           ports:
             - name: jellystat
               containerPort: 3000

@@ -20,11 +20,12 @@ spec:
         - name: bazarr
           image: ghcr.io/linuxserver/bazarr:1.6.2-development
           resources:
+            # 72h Mimir (2026-09-28): mem p95 357Mi / max 358Mi, CPU p95 4m.
             requests:
-              memory: 128Mi
-              cpu: 25m
+              memory: 368Mi
+              cpu: 5m
             limits:
-              memory: 600Mi
+              memory: 768Mi
           ports:
             - name: bazarr
               containerPort: 6767

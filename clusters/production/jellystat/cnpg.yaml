@@ -16,14 +16,11 @@ spec:
   storage:
     size: 10Gi
     # RWO Cinder default StorageClass (argus-provided)
-  # No resources were set before this; each instance was fully unbounded on
-  # memory-constrained nodes. Observed usage per instance over an 8h sample:
-  # ~59-124Mi RSS, ~6-13m CPU.
+  # 72h Mimir (2026-09-28): mem p95 131Mi / max 135Mi, CPU p95 13m / max 15m.
+  # Limit keeps ~3x max for the default shared_buffers (128MB) + vacuum.
   resources:
     requests:
-      memory: 256Mi
-      # 72h peak ~10m CPU per instance (Mimir). 100m was ~10x peak;
-      # 50m keeps headroom for a small metadata DB.
-      cpu: 50m
+      memory: 144Mi
+      cpu: 15m
     limits:
-      memory: 512Mi
+      memory: 384Mi

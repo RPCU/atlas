@@ -24,6 +24,13 @@ spec:
           secretKeyRef:
             name: external-dns-cloudflare
             key: api-token
+    # Was BestEffort. 72h Mimir (2026-09-28): mem p95 59Mi / max 62Mi, CPU p95 1m.
+    resources:
+      requests:
+        cpu: 5m
+        memory: 64Mi
+      limits:
+        memory: 192Mi
     txtOwnerId: production
     domainFilters:
       - rpcu.io

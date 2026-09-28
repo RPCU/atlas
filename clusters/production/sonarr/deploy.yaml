@@ -20,11 +20,12 @@ spec:
         - name: sonarr
           image: ghcr.io/linuxserver/sonarr:4.0.20-develop
           resources:
+            # 72h Mimir (2026-09-28): mem p95 233Mi / max 237Mi, CPU p95 12m.
             requests:
-              memory: 128Mi
-              cpu: 25m
+              memory: 240Mi
+              cpu: 15m
             limits:
-              memory: 500Mi
+              memory: 512Mi
           ports:
             - name: sonarr
               containerPort: 8989

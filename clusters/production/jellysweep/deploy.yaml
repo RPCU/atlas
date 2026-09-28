@@ -22,11 +22,12 @@ spec:
           args:
             - serve
           resources:
+            # 72h Mimir (2026-09-28): mem p95 52Mi / max 55Mi, CPU p95 <1m.
             requests:
-              memory: 48Mi
-              cpu: 25m
+              memory: 64Mi
+              cpu: 5m
             limits:
-              memory: 300Mi
+              memory: 192Mi
           ports:
             - name: jellysweep
               containerPort: 3002

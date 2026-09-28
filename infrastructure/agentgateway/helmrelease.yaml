@@ -52,15 +52,13 @@ spec:
       name: RetryOnFailure
       retryInterval: 5m
   values:
-    # Control-plane container. No usage history exists yet (first install), so
-    # this is the chart default request with a memory limit added, matching the
-    # house style of "request ~= expected steady state, memory limit only, never
-    # a CPU limit". Revisit against Mimir once the gateway has a few days of
-    # traffic — see the cnpg/kgateway HelmReleases for the same treatment.
+    # Control-plane container. 72h Mimir (2026-09-28): mem p95 133Mi / max
+    # 152Mi, CPU p95 1m. House style: request ~= steady state, memory limit
+    # only, never a CPU limit.
     resources:
       requests:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 5m
+        memory: 144Mi
       limits:
         memory: 512Mi
     controller:

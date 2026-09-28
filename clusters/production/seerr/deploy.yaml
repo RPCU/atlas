@@ -47,11 +47,12 @@ spec:
               fi
               exec npm start
           resources:
+            # 72h Mimir (2026-09-28): mem p95 219Mi / max 222Mi, CPU p95 3m.
             requests:
-              memory: 128Mi
-              cpu: 50m
+              memory: 224Mi
+              cpu: 5m
             limits:
-              memory: 600Mi
+              memory: 448Mi
           ports:
             - name: seerr
               containerPort: 5055

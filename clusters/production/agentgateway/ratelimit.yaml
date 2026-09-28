@@ -24,9 +24,12 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 25m
-      memory: 256Mi
+      # 72h Mimir (2026-09-28): mem p95 46Mi / max 49Mi, CPU p95 12m.
+      cpu: 15m
+      memory: 64Mi
     limits:
+      # Functional, keep both: see zot/dragonfly.yaml (threads from the CPU
+      # quota, >=256MiB maxmemory per thread from the memory limit).
       cpu: 500m
       memory: 512Mi
 ---
@@ -167,9 +170,10 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
           resources:
+            # 72h Mimir (2026-09-28): ~12Mi, ~1m CPU.
             requests:
-              cpu: 25m
-              memory: 64Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 256Mi
           volumeMounts:

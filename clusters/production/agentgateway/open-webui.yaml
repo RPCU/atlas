@@ -248,9 +248,12 @@ spec:
             timeoutSeconds: 10
             failureThreshold: 6
           resources:
+            # 72h Mimir (2026-09-28): mem p95/max 756Mi (was above its 512Mi
+            # request), CPU p95 5m / max 113m. Limit keeps headroom for the
+            # embedding model loaded on first RAG/document use.
             requests:
-              cpu: 100m
-              memory: 512Mi
+              cpu: 10m
+              memory: 768Mi
             limits:
               memory: 2Gi
           volumeMounts:
