@@ -2,14 +2,24 @@
 
 ## ⚠️ CRITICAL INSTRUCTIONS FOR AI AGENTS
 
-### 1. Commit Policy
+### 1. Git & Deploy Policy
 
-**Do NOT commit changes unless explicitly asked by the user.**
+**Agents MAY branch, commit, push, open/rebase PRs, merge to `main` and
+`flux reconcile` when needed** (see "Development Workflow" in §4). **For a big
+change, wait for the user's approval before merging to `main`** — merging is
+the deployment.
 
-- Always preview changes and request confirmation before committing
-- Show `git diff` output to the user
-- List all files that will be committed
-- Draft commit message for user approval
+- Never commit on `main`: feature branch → Conventional Commit → push → PR →
+  rebase on `origin/main` (`--force-with-lease`) → rebase merge
+  (`gh pr merge <pr> --rebase`, `--admin` if branch policy blocks it) → delete
+  the branch → `git checkout main && git pull --ff-only`.
+- **Small change** (one app's values/resources, a new HTTPRoute, docs) → merge directly.
+- **Big change** → open + rebase the PR, link it, and wait for approval before
+  merging. Big = restarts stateful apps holding real data (media PVCs, CNPG,
+  zot, palworld), touches several apps at once, changes Gateways/DNS/OIDC/cert
+  issuers, deletes resources or changes `prune`, or has an unclear rollback.
+  When unsure, treat it as big.
+- Never amend commits or force-push `main`.
 
 ### 2. Documentation Policy
 
@@ -21,7 +31,7 @@ Whenever you modify the codebase:
 - Document new apps, components, versions, or configurations
 - Update directory structure if files are added/removed
 - Update the "Last Updated" date at the end of this file
-- Include changes in the same request when asking for commit permission
+- Include the AGENTS.md update in the same commit/PR as the change
 
 ---
 
@@ -551,16 +561,18 @@ RWO volumes should omit `storageClassName` (cluster default = Cinder).
 1. Create feature branch, make YAML changes
 2. `devenv shell` → pre-commit hooks (shellcheck, treefmt/prettier/nixfmt)
 3. Validate: `kustomize build clusters/production/`
-4. Push, PR to main; Flux picks up main within ~1m of merge
-5. Force a sync: `flux reconcile source git atlas -n flux-system && flux reconcile kustomization atlas -n flux-system`
+4. Commit, push, open a PR to main, rebase on `origin/main`
+5. Merge with `gh pr merge <pr> --rebase` — directly for small changes, **only after the user's approval for big changes** (§1)
+6. Force a sync when needed: `flux reconcile source git atlas -n flux-system && flux reconcile kustomization atlas -n flux-system`
 
 ---
 
 ## 5. Important Notes for AI Agents
 
-### Commit Policy
+### Git & Deploy Policy
 
-**⚠️ DO NOT COMMIT CHANGES UNLESS EXPLICITLY ASKED** (preview diff, list files, draft message, wait for approval).
+Agents may commit, push, open/rebase PRs, merge to `main` and `flux reconcile`
+on their own. **Big changes: wait for the user's approval before merging** (§1).
 
 ### File Safety
 
