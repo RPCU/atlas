@@ -366,6 +366,7 @@ targets Designate/`production.rpcu.lan`):
 Only the public Gateway:
 
 - `gateway.yaml` - Gateway `https-external` (ns kgateway-system, gatewayClassName `kgateway`, **static address `172.16.255.10`**, GatewayParameters `gwp-static-ip`), listeners HTTP/HTTPS for `*.rpcu.io`, TLS Terminate with `rpcu-io-wildcard-tls` (annotation `cert-manager.io/cluster-issuer: rpcuio`), 128Mi per-connection buffer; + HTTPRoute `https-redirect-external` (301 → https)
+- `httproute-openchoreo.yaml` - **Public GitHub webhook ingress for OpenChoreo**, which stays on the platform cluster (hestia). Static `Backend` `openchoreo-platform` → the platform cluster's OpenChoreo `gateway-default` LB `172.16.255.118:80` (plain HTTP; the openchoreo-api HTTPRoute attaches to its http listener too) + HTTPRoute `openchoreo-webhook` on `openchoreo.rpcu.io` exposing **only `POST /api/v1alpha1/autobuild`** (Exact match; everything else 404s at this gateway), with a `URLRewrite` hostname → `api.platform.rpcu.lan` so the platform-side route matches. openchoreo-api serves that endpoint without auth but validates the GitHub `X-Hub-Signature-256` HMAC against its `git-webhook-secrets` Secret (hestia, Vault `secrets-platform/openchoreo/git-webhook`). Console/API/ThunderID stay internal — do not widen this route to `/`: the OIDC issuer is `*.platform.rpcu.lan`, so a public console could not log in anyway. Same static-Backend pattern as `httproute-chihiro.yaml` / `httproute-ceph-s3.yaml`
 
 **cnpg/** — The **CloudNativePG** Postgres operator (NOT argus/Sveltos-provided; installed HERE because no repo previously needed Postgres). Consumed by jellystat's `Cluster` CR:
 
@@ -639,7 +640,9 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: 2026-09-28 (Third requests/limits pass from 72h Mimir
+**Last Updated**: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
+OpenChoreo's `POST /api/v1alpha1/autobuild` GitHub webhook endpoint → platform
+cluster `gateway-default` `172.16.255.118:80`.) — Prior: 2026-09-28 (Third requests/limits pass from 72h Mimir
 p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld
 750m/2Gi→300m/1536Mi, qbittorrent limit 3Gi→1Gi, zot, dragonflies, open-webui
 512→768Mi, agentgateway, cnpg operator + jellystat postgres, external-dns (was

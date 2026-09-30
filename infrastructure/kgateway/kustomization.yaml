@@ -3,4 +3,5 @@ resources:
   - gateway.yaml
   - httproute-ceph-s3.yaml
   - httproute-chihiro.yaml
+  - httproute-openchoreo.yaml
   - httplistenerpolicy.yaml
