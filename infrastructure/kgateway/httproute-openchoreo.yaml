@@ -1,0 +1,47 @@
+# Public entry point for Git webhooks into OpenChoreo, which stays on the
+# platform cluster. Only the autobuild endpoint is exposed: openchoreo-api
+# serves it unauthenticated but checks the GitHub HMAC (X-Hub-Signature-256)
+# against its git-webhook-secrets Secret (hestia). The console and the rest of
+# the API remain internal (*.platform.rpcu.lan).
+#
+# Target is the platform cluster's OpenChoreo gateway-default LoadBalancer on
+# plain HTTP :80 — the openchoreo-api HTTPRoute attaches to its http listener
+# too — with the Host rewritten so that route matches.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: openchoreo-platform
+  namespace: kgateway-system
+spec:
+  type: Static
+  static:
+    hosts:
+      - host: 172.16.255.118
+        port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openchoreo-webhook
+  namespace: kgateway-system
+spec:
+  parentRefs:
+    - name: https-external
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "openchoreo.rpcu.io"
+  rules:
+    - matches:
+        - method: POST
+          path:
+            type: Exact
+            value: /api/v1alpha1/autobuild
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: api.platform.rpcu.lan
+      backendRefs:
+        - name: openchoreo-platform
+          kind: Backend
+          group: gateway.kgateway.dev
