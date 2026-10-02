@@ -79,7 +79,7 @@ spec:
             - name: data
               mountPath: /palworld
         - name: playit
-          image: ghcr.io/playit-cloud/playit-agent:1.0.10
+          image: ghcr.io/playit-cloud/playit-agent:1.0.12
           resources:
             requests:
               memory: 32Mi
