@@ -27,6 +27,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: open-webui-data
   namespace: agentgateway-system
+  labels:
+    # Chat history: survives removing the stack from git (the Cinder SC
+    # deletes the volume with the claim).
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   accessModes:
     - ReadWriteOnce
