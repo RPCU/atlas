@@ -1,8 +1,0 @@
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: agentgateway-system
-  labels:
-    # Keep the namespace (and so Open WebUI's data) if the stack is removed.
-    kustomize.toolkit.fluxcd.io/prune: disabled
