@@ -76,9 +76,9 @@ Atlas resources depend on objects that are **NOT defined in this repo**:
 | HelmRepository `external-dns` (ns `internal-dns`, argus base)                   | `infrastructure/external-dns/helmrelease.yaml` (Cloudflare instance)                                                                                                   |
 | StorageClasses: `csi-cinder-sc-delete` (default, RWO) + `ceph-cephfs` (RWX)     | all PVCs (see Storage section)                                                                                                                                         |
 | Shared Zitadel org/projects (argus openstack overlay owns the platform)         | `clusters/production/crossplane/oidc-*.yaml` (reference org/project by literal external ID)                                                                            |
-| DragonflyDB operator (argus Sveltos `dragonfly` add-on, label-gated)            | `clusters/production/zot/dragonfly.yaml` (zot's Redis remoteCache) **and** `clusters/production/agentgateway/ratelimit.yaml` (the LLM budget counters)                 |
+| DragonflyDB operator (argus Sveltos `dragonfly` add-on, label-gated)            | `clusters/production/zot/dragonfly.yaml` (zot's Redis remoteCache)                 |
 | Zitadel `groupsClaim` Action + the org's roles (argus openstack overlay)        | `gateway.yaml` rawConfig uses `jwt.groups` for per-group tiered rate limits (`rpcu-admin` / `public-admin` / `public-user`) |
-| kube-prometheus-stack (Sveltos `monitoring` add-on)                             | `clusters/production/{palworld/servicemonitor,agentgateway/podmonitor}.yaml` — both MUST carry `release: kube-prometheus-stack`                                        |
+| kube-prometheus-stack (Sveltos `monitoring` add-on)                             | `clusters/production/palworld/servicemonitor.yaml` — MUST carry `release: kube-prometheus-stack`                                        |
 
 If something in atlas fails to reconcile, check whether its argus-side
 prerequisite (Sveltos add-on label, Vault path, shared Gateway) exists first.
@@ -109,7 +109,6 @@ the `atlas` Flux Kustomization reconciles):
 - `kgateway.yaml` - Flux Kustomization `kgateway-external` → `./infrastructure/kgateway` (wait: true)
 - `external-dns.yaml` - Flux Kustomization `external-dns` → `./infrastructure/external-dns` (wait: true)
 - `cnpg.yaml` - Flux Kustomization `cnpg` → `./infrastructure/cnpg` (wait: true) — installs the CloudNativePG operator + CRDs consumed by jellystat's Postgres `Cluster`
-- `agentgateway.yaml` - **TWO** Flux Kustomizations: `agentgateway` → `./infrastructure/agentgateway` (wait: true, the control plane + CRDs) and `agentgateway-resources` → `./clusters/production/agentgateway` (**dependsOn agentgateway**). Split like crossplane/crossplane-resources because the app dir uses the `agentgateway.dev/v1alpha1` CRD group, which does not exist until the control plane is installed — applying it from the root `atlas` Kustomization would fail every reconcile until the CRDs landed
 - `crossplane.yaml` - Flux Kustomization `crossplane` → **argus** `./infrastructure/crossplane` (sourceRef GitRepository `flux-system`, i.e. the argus repo — the path does not exist in atlas)
 - `crossplane-zitadel.yaml` - Flux Kustomization `crossplane-zitadel` → **argus** `./infrastructure/crossplane-zitadel` (dependsOn crossplane). Provider package only.
 - `crossplane-resources.yaml` - Flux Kustomization `crossplane-resources` → `./clusters/production/crossplane` (dependsOn crossplane-zitadel, **prune: false**)
@@ -124,7 +123,6 @@ the `atlas` Flux Kustomization reconciles):
 - `oidc-jellystat.yaml` - `Oidc` app for jellystat's oauth2-proxy (redirect `https://jellystat.production.rpcu.lan/oauth2/callback`), project `370001231734928333` ("administration"), connection secret `jellystat-oidc` → ns media
 - `oidc-jellysweep.yaml` - `Oidc` app for jellysweep's **native** OIDC login (redirect `https://jellysweep.production.rpcu.lan/auth/oidc/callback`), project `370001231784969038` ("public"), **role assertion enabled** (id/access token + userinfo) so the argus `groupsClaim` action surfaces the `groups` claim jellysweep matches against `admin_group: public-admin`. Connection secret `jellysweep-oidc` → ns media
 - `oidc-zot.yaml` - `Oidc` app for the **zot** container registry's **native** OIDC web-UI login (redirect `https://zot.rpcu.io/zot/auth/callback/oidc`), project `370001231734928333` ("administration"), **role assertion enabled** so the argus `groupsClaim` action surfaces the `groups` claim zot matches against its `admin` group ACL. Connection secret `zot-oidc` → **ns registry** (not media)
-- `oidc-agentgateway.yaml` - `Oidc` app for the **agentgateway built-in chat UI** (Zitadel OIDC login at `chat.rpcu.io`), project `370001231734928333` ("administration"), `OIDC_APP_TYPE_WEB` + `OIDC_AUTH_METHOD_TYPE_BASIC`. Redirect URI `https://chat.rpcu.io/oauth/callback`. Connection secret `agentgateway-oidc` → **ns agentgateway-system** (the OIDC policy reads `client_id`/`client_secret` directly). `appType` is **immutable** in Zitadel — do not change it.
 
 > **Shared Zitadel ownership.** The Zitadel org `rpcu` (`369994019545117645`)
 > and its projects are OWNED by the argus openstack cluster overlay. Atlas
@@ -232,121 +230,18 @@ the `atlas` Flux Kustomization reconciles):
   > group ACL to grant RW. (3) CLI clients do `docker login zot.rpcu.io` with an
   > htpasswd user; the web UI uses Zitadel OIDC.
 
-**LLM Gateway** (in namespace `agentgateway-system`, which is created by
-`infrastructure/agentgateway/namespace.yaml`, not here). Reconciled by the
-`agentgateway-resources` Flux Kustomization, **not** by the root `atlas` one:
-
-- `agentgateway/` - The whole LLM stack: **Open WebUI** (the chat frontend and
-  the only authenticated entry point), the gateway, and the **Google Gemini**
-  backend.
-
-  **Traffic path — two Gateways in series, each doing what it is good at:**
-
-  ```
-  internet → https-external (kgateway, 172.16.255.10, TLS terminate, LE wildcard)
-           → chat.rpcu.io (HTTPRoute → open-webui:80)
-           → Open WebUI: Zitadel OIDC browser login happens HERE
-           → user picks model, sends message
-           → Open WebUI calls llm:80/v1 with the caller's identity in headers
-             (X-OpenWebUI-User-Id + X-OpenWebUI-User-Groups)
-           → rate limit check (per-user daily token budget, tiered by group)
-           → prompt enrichment (house system prompt)
-           → AgentgatewayBackend gemini → generativelanguage.googleapis.com
-             (the shared Gemini credential is injected HERE)
-  ```
-
-  The `https-external` Gateway is `gatewayClassName: kgateway` and **cannot**
-  host the LLM policies — those need the `agentgateway` GatewayClass. Hence the
-  second Gateway. Keeping it ClusterIP means one public IP, one cert chain and
-  one DNS owner for the whole cluster.
-
-  > **⚠️ WHY THE AUTH IS IN OPEN WEBUI AND NOT ON THE GATEWAY.** agentgateway's
-  > native OIDC browser login is a **standalone-mode-only** feature — it does
-  > NOT exist in the Kubernetes controller path, on ANY released chart (2.2.x,
-  > 1.x, main). The `AgentgatewayPolicy` CRD has no `traffic.oidc`, and proxy
-  > v0.12.0 rejects `oidc` in `rawConfig.policies` with "unknown field `oidc`".
-  > Attempts to put it there crashed the proxy. The built-in chat UI is also a
-  > dead end for external exposure: it binds to `127.0.0.1:15000` (the admin
-  > interface), so a ClusterIP Service targeting pod-IP:15000 can never reach
-  > it. Open WebUI solves both — it terminates OIDC itself and is a normal HTTP
-  > Deployment. Do not try to re-add gateway-side OIDC.
-
-  > **⚠️ SECURITY MODEL: OIDC AT THE FRONTEND + NETWORK ISOLATION.** The `llm`
-  > Gateway performs **no authentication at all**. It is ClusterIP with
-  > `allowedRoutes.namespaces.from: Same`, so only workloads in
-  > `agentgateway-system` can reach it, and only Open WebUI has a route. The
-  > identity headers the rate limiter keys on are plaintext and application-set,
-  > NOT derived from a signed token — strictly weaker than the `jwt.groups` this
-  > used to read off a validated Zitadel JWT. **That is acceptable only while
-  > the Gateway stays unexposed.** If it is ever published, the budgets must
-  > move back onto a verified JWT claim or they become trivially bypassable.
-
-  > **⚠️ PER-GROUP RATE LIMITING: HOW THE IDENTITY SURVIVES THE HOP.** Open WebUI
-  > terminates OIDC but then calls the gateway with its OWN static credential,
-  > so by default every request looks like one client and only a single global
-  > budget is enforceable. Two settings in `open-webui.yaml` fix that:
-  > `ENABLE_FORWARD_USER_INFO_HEADERS: "true"` (sends
-  > `X-OpenWebUI-User-{Id,Email,Name,Role}`) and an `OPENAI_API_CONFIGS` entry
-  > adding a custom header `X-OpenWebUI-User-Groups: {{USER_GROUPS}}`. Four
-  > traps, all load-bearing:
-  >
-  > 1. `X-OpenWebUI-User-Role` is Open WebUI's OWN role — only `admin`/`user`/
-  >    `pending`, NOT the Zitadel group. It collapses three tiers into two, so
-  >    the groups must come via the separate `{{USER_GROUPS}}` header.
-  > 2. `{{USER_GROUPS}}` only expands if `ENABLE_OAUTH_GROUP_MANAGEMENT` **and**
-  >    `ENABLE_OAUTH_GROUP_CREATION` are both true (both default false). It syncs
-  >    at **login only** — a Zitadel group change needs a re-login.
-  > 3. `OPENAI_API_CONFIGS` is **strict JSON** keyed by the connection's index
-  >    (`"0"` for our single `OPENAI_API_BASE_URL`). A trailing comma or comment
-  >    makes Open WebUI log a warning and fall back to `{}`, and the header then
-  >    silently never gets sent — which looks exactly like a gateway-side bug.
-  > 4. Group order is **nondeterministic** (`updated_at DESC`) and a user with
-  >    no groups gets the header with an EMPTY string, not a missing header.
-  >    Never exact-match the value; test membership.
-
-  > **⚠️ GEMINI BACKEND, FLIPPED FROM ANTHROPIC.** The Vault path
-  > `secrets-production/agentgateway/gemini` key `apiKey` holds a **Google AI
-  > Studio API key** (<https://aistudio.google.com/app/apikey>). It is read into
-  > the `gemini-credentials` Secret with the single key `Authorization` (the CRD
-  > rejects any other key name for a non-AWS `secretRef`) and used by
-  > `backends.yaml`'s `policies.auth.secretRef`. **Populate it out of band or
-  > every request 401s** — an empty path means the Secret is never created. The
-  > old `secrets-production/agentgateway/anthropic` path is intentionally left
-  > in Vault, and `policy-claude-code.yaml` is intentionally left on disk
-  > (disabled, absent from `kustomization.yaml`), so the backend can be flipped
-  > back to Anthropic: re-add that file to the kustomization, restore the
-  > Claude Code identity `prepend` in `policy-prompt.yaml`, and swap
-  > `provider.anthropic` back in `backends.yaml`. Nothing else has to change.
-  > **Do not** re-add the Anthropic routes `/v1/messages` +
-  > `/v1/messages/count_tokens` while the backend is Gemini — they are
-  > Anthropic-native and have no Gemini equivalent.
-  - `secrets.yaml` - ExternalSecret `gemini-credentials`, key `Authorization` ← Vault `secrets-production/agentgateway/gemini` property `apiKey`. Read by `backends.yaml`'s `policies.auth.secretRef`. **Populate out of band** (see the warning above).
-  - `gateway.yaml` - `AgentgatewayParameters` `llm` (**`service.spec.type: ClusterIP`** — the deployer defaults to LoadBalancer, which would burn an Octavia LB) + Gateway `llm` (class `agentgateway`, HTTP :80 only, `allowedRoutes.namespaces.from: Same`). **No `rawConfig`, no auth** — hand-rolled rawConfig policies crash proxy v0.12.0 ("exactly 1 policy", NamespacedHostname, unknown field `oidc`). Everything policy-related lives in the `AgentgatewayPolicy` CRDs. The controller's deployer creates the `llm` Deployment + Service from this.
-  - `backends.yaml` - `AgentgatewayBackend` `gemini`. **`provider.gemini.model: gemini-2.5-flash`** PINS every request to that model, **overriding** whatever the chat UI's picker sends — so no user can burn the shared credential on an expensive model. Remove the `model:` line to let the request body choose again. `policies.auth.secretRef` → `gemini-credentials`; `policies.ai.routes` maps `/v1/chat/completions` → Completions (the UI's OpenAI dialect, converted to Gemini's `generateContent`) and `*` → Passthrough. **The `Completions` route is load-bearing**: it is the only route type agentgateway parses, and parsing is what unlocks prompt enrichment, token counting for the rate limit (`unit: Tokens`) and cost metrics — `Passthrough` applies no policies at all.
-  - `httproute.yaml` - A plain **catch-all** → the `gemini` backend. The old `x-model` header matching (and the PreRouting policy that fed it) was deleted: it only earns its keep with two or more providers. The file documents how to re-add a per-provider rule above the catch-all.
-  - `policy-claude-code.yaml` - **DISABLED, not listed in `kustomization.yaml`.** It was `AgentgatewayPolicy` `llm-claude-code`: the three HTTP headers Anthropic requires for *subscription* tokens (`anthropic-beta: oauth-2025-04-20`, `user-agent: claude-cli/1.0.0 (external)`, `x-app: cli`) via `traffic.transformation.request.set`, targeted at the **HTTPRoute**. Pure Anthropic/Claude-Code spoofing — meaningless against Gemini, so it stays on disk for a flip back rather than being applied.
-  - `policy-ratelimit.yaml` - `AgentgatewayPolicy` `llm-ratelimit`, targets the **Gateway**. The per-group token budgets. Descriptor entries are CEL over the identity headers Open WebUI forwards, NOT over JWT claims: tier = `default(request.headers["x-openwebui-user-groups"], "")` tested with `.contains()` highest-privilege-first, user = `default(request.headers["x-openwebui-user-id"], "anonymous")`. **The `default()` guards are load-bearing**: if an expression errors, agentgateway silently SKIPS the whole descriptor and enforces nothing for that request — a caller who just omits the header would otherwise be unlimited. A third `global` descriptor depends on no header at all, so every request is counted regardless. `unit: Tokens` is what makes the reported cost a token count (the `llm` CEL context is NOT available in a rate limit policy, so `llm.totalTokens` cannot be read). Verified end to end against the Dragonfly counters: `public-user` → own bucket, `rpcu-admin,public-user` → promoted to `rpcu-admin`, no headers → `user_id_anonymous` on the most restrictive tier.
-  - `policy-prompt.yaml` - `AgentgatewayPolicy` `llm-prompt`: prompt enrichment via `backend.ai.prompt.prepend`, currently a **single** house preamble (the verbatim Claude Code identity string that used to lead the list left with the Gemini swap). Targets the **HTTPRoute**. Only works on route types agentgateway parses as chat — which is why `backends.yaml` must keep `/v1/chat/completions` → `Completions`; the `*` → `Passthrough` catch-all is opaque and cannot be enriched.
-  - `policy-models.yaml` - `AgentgatewayPolicy` `llm-models`, targets the **HTTPRoute**. Rewrites `:path` `request.pathAndQuery`-preserving from `/v1/models` → `/v1beta/openai/models` via `traffic.transformation`. **This is the only thing that makes Open WebUI's model picker work.** `/v1/models` has no route in `backends.yaml`, so it falls to `*` → `Passthrough`, and Passthrough forwards the **client path unchanged** upstream — landing on Google's native list endpoint, which authenticates with `x-goog-api-key`, while agentgateway injects the key as `Authorization: Bearer` (it only relocates the key for native `GenerateContent`/`CountTokens`). Result: `401 UNAUTHENTICATED / CREDENTIALS_MISSING / ModelService.ListModels`, no models in the UI. Alternatives that do NOT work: mapping to `RouteType: Models` (the proxy returns **501 "not implemented"**), or a second backend with `spec.ai.path` (duplicates the backend). Google's OpenAI-compatible `/v1beta/openai/models` accepts `Authorization: Bearer <AIza…>` and answers in OpenAI shape `{"object":"list","data":[…]}`, which is what the rewrite targets. Chat is unaffected (`/v1/chat/completions` never matches).
-  - `ratelimit.yaml` - `Dragonfly` CR `llm-ratelimit-dragonfly` + the Envoy reference rate limit service (gRPC :8081) + `ratelimit-config`. **Per-group tiered token budgets**: rpcu-admin 5M/user/day + 20M group ceiling; public-admin 1M/user/day + 5M group ceiling; public-user 100k/user/day + 1M group ceiling. With a metered upstream backend these are **cost ceilings** (every token bills the shared credential). Counters reset on Dragonfly restart (in-memory only, deliberately not persisted).
-  - `open-webui.yaml` - PVC (10Gi RWO) + Deployment + Service for **Open WebUI** (`ghcr.io/open-webui/open-webui:v0.11.3`), the authenticated chat frontend. Zitadel OIDC login (`OPENID_PROVIDER_URL` → the discovery doc, redirect `/oauth/oidc/callback`, credentials from the Crossplane `agentgateway-oidc` secret). `ENABLE_PERSISTENT_CONFIG: "false"` keeps the env authoritative — otherwise Open WebUI persists settings to SQLite on first boot and silently ignores the manifest forever after (the corollary: **no Admin-Panel change survives a restart**; configure this app by editing the file). An initContainer seeds the PVC from the image's baked-in model cache, without which the app re-downloads ~1GB from HuggingFace on first boot. Identity forwarding for the rate limiter is configured here — see the per-group rate limiting warning above.
-  - `open-webui-httproute.yaml` - **Public**: `chat.rpcu.io` on `https-external` → `open-webui:80`. 1800s on both the HTTPRoute `timeouts` and a kgateway `TrafficPolicy` `streamIdle` — the former bounds the whole request, the latter is what actually keeps the Socket.IO stream (`/ws/socket.io`, idle between messages) from being killed. Both are required; neither implies the other.
-  - `open-webui-secrets.yaml` - ExternalSecret `open-webui-secrets`, `secret-key` ← Vault `secrets-production/openwebui/config` property `secretKey`. `WEBUI_SECRET_KEY` signs sessions AND encrypts stored OAuth tokens; if unset the image generates one into the container filesystem, so every restart would log everyone out. **Populate out of band** (`openssl rand -hex 32`).
-  - `podmonitor.yaml` - `PodMonitor` (not ServiceMonitor — the deployer's Service exposes only :80, not the :15020 stats port). **MUST carry `release: kube-prometheus-stack`** or it is silently ignored.
-
-  > **⚠️ Do not "tidy" the Zitadel app.** `appType` is **immutable** in Zitadel.
-  > The existing `OIDC_APP_TYPE_WEB` + `OIDC_AUTH_METHOD_TYPE_BASIC` pairing is
-  > exactly what the built-in OIDC flow needs. Changing it is a
-  > delete-and-recreate, and the client_id/secret would rotate underneath the
-  > running gateway. Note also that the provider does **not** accept
-  > `OIDC_GRANT_TYPE_CLIENT_CREDENTIALS` — it is not in the schema enum.
-
-  > **LLM stack out-of-band prereqs.** (1) Vault
-  > `secrets-production/agentgateway/gemini` key `apiKey` — a Google AI Studio
-  > API key (<https://aistudio.google.com/app/apikey>). Do this BEFORE the Flux
-  > sync, or the backend has no credential.
-  > (2) Rate limit counters live only in Dragonfly memory: a restart resets the
-  > window.
+**LLM Gateway (agentgateway + Open WebUI) — REMOVED 2026-10-21.** The whole
+stack (the `agentgateway`/`agentgateway-resources` Flux Kustomizations, the
+agentgateway control plane + CRDs, the `llm` Gateway and policies, the Gemini
+backend, rate limiting, Open WebUI at `chat.rpcu.io`, and the Zitadel `Oidc`
+app `agentgateway`) was deleted from this repo. The `agentgateway-system`
+namespace and Open WebUI's `open-webui-data` PVC (10Gi, chat history) were
+labelled `kustomize.toolkit.fluxcd.io/prune: disabled` first, so they were
+**left on the cluster** — delete them by hand to drop the data. To restore
+the stack, revert the removal commit (git history has the full config and
+its docs); the PVC is picked up again as-is. Vault
+`secrets-production/agentgateway/*` and `secrets-production/openwebui/config`
+are left in place.
 
 ### infrastructure/ - Production-Specific Glue
 
@@ -373,22 +268,6 @@ Only the public Gateway:
 - `namespace.yaml` - Namespace `cnpg-system`
 - `helmrepo.yaml` - HelmRepository `cloudnative-pg` → `https://cloudnative-pg.github.io/charts`
 - `helmrelease.yaml` - HelmRelease `cloudnative-pg` (chart `cloudnative-pg` **0.29.0**, appVersion 1.30.0), installs the `postgresql.cnpg.io` CRDs (`crds.create: true`, install `Create` / upgrade `CreateReplace`)
-
-**agentgateway/** — The **agentgateway control plane** (NOT argus/Sveltos-provided; installed HERE for the same reason as cnpg — no other cluster needs an LLM gateway yet). Consumed by `clusters/production/agentgateway/`:
-
-- `namespace.yaml` - Namespace `agentgateway-system`
-- `ocirepository.yaml` - **OCIRepository** `agentgateway-crds` + `agentgateway` → `oci://cr.agentgateway.dev/charts/...`, both `tag: v1.5.0`. These charts are OCI artifacts, so there is no `HelmRepository` here (unlike cnpg/external-dns/zot); Flux consumes them via `HelmRelease.chartRef`
-- `helmrelease.yaml` - HelmRelease `agentgateway-crds` (the `agentgateway.dev/v1alpha1` CRDs) + HelmRelease `agentgateway` (**dependsOn** the CRD release; the controller). Both use `upgrade.strategy: RetryOnFailure`
-
-> **⚠️ agentgateway is NOT kgateway.** It is a separate project with its own
-> controller, its own **`agentgateway` GatewayClass**, and its own CRD group
-> (`agentgateway.dev/v1alpha1`: `AgentgatewayBackend`, `AgentgatewayPolicy`,
-> `AgentgatewayParameters`, `AgentgatewayModel`). It coexists with the
-> argus/Sveltos-delivered kgateway controller — the two watch different
-> GatewayClasses and never contend for a Gateway. Do not confuse
-> `agentgateway.dev/v1alpha1` `AgentgatewayPolicy` with
-> `gateway.kgateway.dev/v1alpha1` `TrafficPolicy`; both exist in this repo and
-> both appear in `clusters/production/agentgateway/`.
 
 ---
 
@@ -444,7 +323,6 @@ KV-v2 mount `secrets-production`). Paths in use:
 - `secrets-production/jellystat/config` — jellystat Postgres `username`/`password` + `jwtSecret` (bootstrap secret for the CNPG cluster AND app creds; **populate out of band**)
 - `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
 - `secrets-production/palworld/config` — palworld `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY` (playit sidecar) + `DISCORD_WEBHOOK_URL` (Discord lifecycle notifications), all consumed by the `palworld-secrets` ExternalSecret (**populate out of band**)
-- `secrets-production/agentgateway/gemini` — the shared Google AI Studio API key, key `apiKey`, read by the `gemini-credentials` ExternalSecret into the single `Authorization` key the CRD requires for a non-AWS `policies.auth.secretRef`. **Populate out of band** (<https://aistudio.google.com/app/apikey>). The retired `secrets-production/agentgateway/anthropic` path is left in place for flipping the backend back.
 - `secrets-production/zot/htpasswd` — zot CLI basic-auth `htpasswd` file (bcrypt lines, `htpasswd -bBn`; **populate out of band**)
 - `secrets-production/zot/s3` — Ceph S3 `access-key`/`secret-key` for the zot blob store (copy from the argus `rook-ceph` secret `rook-ceph-object-user-rpcu-rpcu`; **populate out of band**)
 - `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent,jellystat,jellysweep,zot,...}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read. (`zot/oidc` is additionally read BACK to template zot's OIDC credentials file.)
@@ -596,8 +474,7 @@ on their own. **Big changes: wait for the user's approval before merging** (§1)
 - Verify reconciliation: `flux get kustomizations -A` on the production cluster
 - **Resource sizing policy** (3rd pass, 2026-09-28, 72h Mimir): mem request ≈
   72h p95, mem limit ≈ 2× 72h max (≥1.25× max), CPU request ≈ p95, **no CPU
-  limits** — EXCEPT the two Dragonfly instances (`zot/dragonfly.yaml`,
-  `agentgateway/ratelimit.yaml`): Dragonfly derives its thread count from the
+  limits** — EXCEPT Dragonfly (`zot/dragonfly.yaml`): Dragonfly derives its thread count from the
   CPU quota and maxmemory from the mem limit (≥256MiB/thread), so it keeps
   500m/512Mi limits or refuses to boot. palworld's mem request sits at ~72h max
   (player-join spikes). Kamaji tenant apiservers (kcp-*) are sized in argus
@@ -781,7 +658,7 @@ cross-repo coupling table (groupsClaim row), added `oidc-agentgateway.yaml`
 to crossplane section, added `secrets-production/openwebui/config`, added
 ollama/open-webui to Version Pins. — Prior: August 2026 (Cluster-wide
 requests/limits pass: pulled 8h of real usage from Mimir — `X-Scope-OrgID: anonymous` tenant, `mimir-query-frontend` in the mgmt cluster's `monitoring` namespace, metrics tagged `cluster="production"` — cross-checked against `kubectl top` on the production cluster (`~/.kube/configs/rpcu/kubernetes-admin@production.kubeconfig`). Finding: small worker nodes (~3.9Gi allocatable) were already at 88% memory _requests_ before any usage, mostly from six oauth2-proxy sidecars each reserving 300Mi (limits totaled 493% overcommitted). Re-sized every app in `media`/`gaming` to observed p50 (requests) / observed max + headroom (limits): oauth2-proxy 300Mi→32Mi request/64Mi limit ×6; the `*arr` stack + bazarr + seerr + jellystat + jellysweep 800Mi/1cpu→200-300Mi/50m request, 400-600Mi limit; prowlarr's `flaresolverr` sidecar (headless-browser, spiky) got a 900Mi limit added (had none); qbittorrent 1800Mi/250m→500Mi/100m request, 1500Mi limit. **No CPU limits set anywhere** (CPU is compressible — a limit only throttles, it doesn't protect memory-pressured nodes, so only memory got capped). jellyfin and palworld are the two workloads marked **important**: requests only, no limits at all, sized to their observed steady-state (jellyfin 750Mi/250m baseline despite a 3.3-core transcode spike in the sample window; palworld 2Gi/750m, down from an unjustified 4Gi/2-core request — no more 12Gi/4-core limit either) so a transcode or a full lobby can never be throttled or OOM-killed. Also gave palworld's `playit` sidecar its first-ever resources block (64Mi/10m request, 128Mi limit — it had none) and the jellystat CNPG `Cluster` its first-ever `spec.resources` (256Mi/100m request, 512Mi limit per instance — all 3 Postgres instances had **zero** requests/limits before this, unbounded on the same pressured nodes). Caveat: Mimir's retention only went back ~8h at the time of this pass (`prometheus_tsdb_lowest_timestamp_seconds` / earliest queryable sample), so these are a single window, not a multi-day p95 — worth revisiting once more history accumulates, particularly for the `*arr` apps' periodic library-scan spikes which may not have fired in that window. — Prior: Bumped the palworld `exporter` sidecar to `docker.io/banhcanh/palworld-exporter:v0.0.2`, which fixes the save-directory resolution described below — `SAVE_DIRECTORY=/palworld` now resolves `Pal/Saved/SaveGames/0/<worldguid>/` (excluding `backup/` snapshots) and reports `palworld_level_save_size_bytes` plus one series per file in `Players/`, so the Saves row of the argus Grafana dashboard populates. Verified end-to-end against the live pod before the bump: `Level.sav` 2.49 MB, 11 player saves, zero backup files counted. — Prior: Swapped the palworld `exporter` sidecar from the Python `docker.io/bostrt/palworld-exporter:v1.3.1` to the Go rewrite `docker.io/banhcanh/palworld-exporter:v0.0.1` ([Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go)). Metric names/labels are unchanged (drop-in for the argus Grafana dashboard), but the **config is not**: it scrapes the server's REST API instead of RCON, so `RCON_HOST`/`RCON_PORT`/`RCON_PASSWORD` were replaced by `SCRAPE_URI=http://127.0.0.1:8212/v1/api` + `HTTP_USER=admin` / `HTTP_PASSWORD` ← `palworld-secrets`.`ADMIN_PASSWORD`, and `LISTEN_PORT=9877` by `LISTEN_ADDRESS=:18212` (the Go exporter's default port). `SAVE_DIRECTORY=/palworld` is unchanged. Follow-on edits: `service.yaml` `metrics` port 9877 → 18212, and `cm.yaml` gained `ENABLE_GAMEDATA_API: "true"` so the server exposes `/v1/api/game-data` (source of the pal/guild/character metrics; that collector silently no-ops without it). The `metrics` port **name** is unchanged so `servicemonitor.yaml` needed no change. Version Pins row updated. Follow-up in **argus**: `infrastructure/grafana/dashboards/palworld-dashboard.yaml` was rewritten from scratch (the grafana.com 20421 import only covered the old Python exporter's handful of metrics) — 37 panels / 6 rows against the Go exporter's full metric set plus kube-prometheus-stack pod/PVC panels, uid `palworld-server` kept. Note `SAVE_DIRECTORY=/palworld` emits no `Level.sav`/player-save metrics **on image `v0.0.1`**: that build's save collector does a flat `os.ReadDir` of `SAVE_DIRECTORY` (its `findSaveDir` helper is dead code) while the real paths are `/palworld/Pal/Saved/SaveGames/0/<worldguid>/Level.sav` and that directory's `Players/` subdir. Fixed upstream in `internal/collector/save.go` (the world save dir is now resolved below the configured root, skipping `backup/`) — the Saves row of the Grafana dashboard stays blank until a new exporter tag is cut and the `image:` pin here is bumped. — Prior: Added the **palworld-exporter** Prometheus exporter (`docker.io/bostrt/palworld-exporter:v1.3.1`, [palworldlol/palworld-exporter](https://github.com/palworldlol/palworld-exporter)) as an `exporter` sidecar in `clusters/production/palworld/deploy.yaml`: it RCONs the game over localhost (`RCON_HOST=127.0.0.1`, `RCON_PORT=25575`, `RCON_PASSWORD` ← `palworld-secrets`.`ADMIN_PASSWORD`; RCON already enabled in `cm.yaml`) and reads save-file metrics from the `data` PVC mounted read-only at `/palworld` (`SAVE_DIRECTORY=/palworld`). Metrics on port 9877, exposed via a new `metrics` port on the palworld `Service`. Added `clusters/production/palworld/servicemonitor.yaml` (`ServiceMonitor` labeled `release: kube-prometheus-stack` so the Sveltos-pushed kube-prometheus-stack Prometheus on production actually scrapes it — `serviceMonitorSelectorNilUsesHelmValues: true`); metrics `remote_write` to central Mimir on mgmt tagged `cluster="production"`. The matching **Grafana dashboard lives in the argus repo** (`infrastructure/grafana/dashboards/palworld-dashboard.yaml`, grafana.com id 20421, datasource UID rewritten to `Mimir`, registered in argus `infrastructure/grafana/kustomization.yaml`) because Grafana is mgmt-only. The exporter mounts the RWO `palworld-data` PVC read-only — fine, since it's a sidecar in the same Pod (RWO = single node, and strategy is `Recreate`). Added palworld-exporter to the Version Pins table. — Prior: Moved ALL palworld secrets to Vault/ESO: the `clusters/production/palworld/secrets.yaml` ESO `ExternalSecret` now targets `palworld-secrets` and pulls `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY`/`DISCORD_WEBHOOK_URL` from Vault `secrets-production/palworld/config` (via `vault-backend`). Retired the separate `palworld-discord` ExternalSecret and the manually-managed direct `palworld-secrets` Secret — every palworld env secret is now GitOps/Vault-managed. `deploy.yaml` reads all four keys from the single `palworld-secrets` Secret. — Prior: Added Discord integration to Palworld (`DISCORD_WEBHOOK_URL` env; image posts server start/shutdown/update/backup events to the webhook by default; player join/leave stays off since `ENABLE_PLAYER_LOGGING=false`). — Prior: Renovate coverage audit: the only untracked dependency was `ghcr.io/playit-cloud/playit-agent:latest` (moving `latest` tag, unpinnable) — pinned it to the current stable semver `1.0.8` so the docker datasource / regex manager #4 tracks it like every other image. Also refreshed the Version Pins table to match live manifests (oauth2-proxy 10.7.0, radarr 6.4.1, sonarr 4.0.19, prowlarr 2.6.1, bazarr 1.6.1, palworld v2.7.1; added sonarr/bazarr/seerr/playit-agent rows). Verified: all `image:` tags, the 6 oauth2-proxy + external-dns + cnpg HelmReleases, and byparr/seerr digest pins are all covered; crossplane/cnpg/cert-manager/kgateway Flux Kustomizations source the argus GitRepository so have no versioned artifact to pin. — Prior: Scaled the jellystat CNPG `Cluster` from 1 to 3 instances — 1 primary + 2 streaming replicas, each with its own 10Gi Cinder PVC. — Prior: Added Palworld dedicated game server in new `gaming` namespace — NodePort for UDP game/query ports, HTTPRoute for REST API on `palworld.rpcu.io`, direct K8s Secret for passwords, 25Gi Cinder PVC. — Prior: Pinned byparr to `main` with digest on GHCR (was `latest`-only, Renovate tracks `main` tag via `pinDigests: true`). — Prior: Closed Renovate coverage gaps: pinned `binhex/arch-qbittorrentvpn:5.2.3-1-01` and external-dns chart `1.21.1`, added a `renovate.json5` `packageRules` entry setting `pinDigests: true` for the two no-semver images — all container images + charts are now trackable. — Prior: Consolidated media storage: merged 4 separate RWX PVCs into a single `media` PVC (900Gi) to enable hardlinks, updated all 5 app deployments to `subPath` mounts.)
-**Last Updated**: 2026-10-21 (Palworld suspended, `replicas: 0`: the production workers were CPU-saturated and the Kamaji tenant control planes kept getting OOMKilled. Earlier, September 2026: Second resource-sizing pass: metrics server
+**Last Updated**: 2026-10-21 (Removed the agentgateway LLM stack and its Oidc app; namespace + `open-webui-data` PVC kept via prune: disabled. Earlier the same day: Palworld suspended, `replicas: 0`: the production workers were CPU-saturated and the Kamaji tenant control planes kept getting OOMKilled. Earlier, September 2026: Second resource-sizing pass: metrics server
 not available, sized against node allocation and app behavior knowledge.
 Reduced requests across 11 workloads: jellyfin 250m/2Gi→100m/1Gi, qbittorrent
 200m/2Gi→100m/1Gi, the five arr-stack apps (radarr/sonarr/prowlarr/bazarr/seerr)
