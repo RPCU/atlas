@@ -7,7 +7,10 @@ metadata:
 spec:
   strategy:
     type: Recreate
-  replicas: 1
+  # Suspended 2026-10-21: the production workers are CPU-saturated and the
+  # Kamaji tenant control planes (platform, …) running there kept getting
+  # OOMKilled. Set back to 1 to bring the server back; saves stay on the PVC.
+  replicas: 0
   selector:
     matchLabels:
       app: palworld
