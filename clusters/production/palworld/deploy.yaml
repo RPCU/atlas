@@ -24,7 +24,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: palworld
-          image: thijsvanloef/palworld-server-docker:v2.8.0
+          image: thijsvanloef/palworld-server-docker:v2.8.1
           lifecycle:
             preStop:
               exec:
