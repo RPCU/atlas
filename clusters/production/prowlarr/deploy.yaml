@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: prowlarr
-          image: ghcr.io/linuxserver/prowlarr:2.6.5-nightly
+          image: ghcr.io/linuxserver/prowlarr:2.6.6-nightly
           resources:
             # 72h Mimir (2026-09-28): mem p95 186Mi / max 193Mi, CPU p95 5m.
             requests:
