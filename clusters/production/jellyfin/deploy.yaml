@@ -16,7 +16,7 @@ spec:
     metadata:
       labels: *default
     spec:
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
       containers:
         - name: jellyfin
@@ -42,18 +42,31 @@ spec:
           ports:
             - containerPort: 8096
               name: jellyfin
+          # /health runs a DB health check against SQLite on the Cinder config
+          # PVC. On the CPU-contended workers it takes 40-90s to boot and can
+          # exceed 1s at runtime, so the old 1s/3-failure liveness probe kept
+          # killing it mid-startup (restart loop, 2026-10-29). The startup probe
+          # gives it 5 min to boot before liveness/readiness kick in.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: jellyfin
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
               port: jellyfin
-            initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
               port: jellyfin
-            initialDelaySeconds: 10
-            periodSeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
           lifecycle:
             postStart:
               exec:
