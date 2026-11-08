@@ -11,6 +11,18 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: project-zot
+  # Without remediation, retries default to 0: one timed-out upgrade (Recreate
+  # strategy + 5m default timeout, 0.1.126 on 2026-11-08) left the release
+  # Stalled/RetriesExceeded even though the Deployment came up fine.
+  install:
+    timeout: 10m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 10m
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     image:
       repository: ghcr.io/project-zot/zot
