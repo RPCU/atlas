@@ -14,7 +14,13 @@ spec:
     matchLabels: *default
   template:
     metadata:
-      labels: *default
+      labels:
+        app: jellyfin
+        role: web
+        # Ballast measures only, never sizes: it added a ~661Mi memory limit
+        # (idle p99 x 1.2) to this deliberately limit-less pod, and transcodes
+        # (ffmpeg, seen up to 960Mi) got it OOMKilled mid-playback (2026-11-08).
+        ballast.tightlinesoftware.com/mode: measure
     spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
