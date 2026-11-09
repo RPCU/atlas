@@ -27,13 +27,13 @@ data:
     auth-default-access: "deny-all"
     enable-signup: false
     enable-login: true
-    auth-access:
-      # nixbook-shell's mesh (nixbook: docs/nixbook-shell/mesh.md): the
-      # members' desktops talk on mesh-<hash of the mesh key> topics, the
-      # payloads end-to-end encrypted by the desktops. Adding someone: their
-      # user + token in Vault (secrets-production/ntfy/config) and a line here.
-      - "khoa:mesh-*:rw"
-      - "chocomooncake:mesh-*:rw"
+    # Nobody gets topics from here: the admin (Vault: AUTH_USERS
+    # "khoa:<hash>:admin" + its token) reaches every topic, and invites the
+    # mesh's members from their desktop (nixbook-shell, Settings > General >
+    # Mesh): ntfy's admin API creates each account with mesh-* access, kept
+    # in user.db on the volume. Admins can't have ACL lines: one here for the
+    # admin stops ntfy from starting.
+    auth-access: []
 
     enable-metrics: true
     metrics-listen-http: ":9090"

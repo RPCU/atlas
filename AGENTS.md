@@ -259,7 +259,7 @@ are left in place.
   - `cm.yaml` - ConfigMap `ntfy-config` (`/etc/ntfy/server.yml`): `base-url
     https://ntfy.rpcu.io`, `behind-proxy`, cache + attachments kept 72h (1G total,
     15M per file), **`auth-default-access: deny-all`**, signup off, the ACL
-    (`auth-access`: `khoa`/`chocomooncake` → `mesh-*` rw; adding a member = their user + token in Vault and a line here), metrics on `:9090`.
+    (`auth-access: []`: the admin `khoa` — `AUTH_USERS` role `admin` in Vault — reaches every topic, and invites the mesh's members from their desktop through ntfy's admin API (accounts with `mesh-*` access in `user.db` on the volume); **an ACL line for an admin stops ntfy from starting**), metrics on `:9090`.
     Users, ACL entries and tokens are **provisioned at every start**: removing one
     from the config/Vault deletes it from `user.db`.
   - `secrets.yaml` - ESO `ExternalSecret` `ntfy-secrets` (`AUTH_USERS`/`AUTH_TOKENS`
@@ -355,7 +355,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 - `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
 - `secrets-production/palworld/config` — palworld `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY` (playit sidecar) + `DISCORD_WEBHOOK_URL` (Discord lifecycle notifications), all consumed by the `palworld-secrets` ExternalSecret (**populate out of band**)
 - `secrets-production/dst/config` — DST `CLUSTER_TOKEN` (Klei server token), `CLUSTER_PASSWORD`, `CLUSTER_KEY` (shard link) + `PLAYIT_SECRET_KEY` (DST's own playit agent), consumed by the `dst-secrets` ExternalSecret (**populate out of band**)
-- `secrets-production/ntfy/config` — ntfy `AUTH_USERS` (`khoa:<bcrypt $2a$>:user,chocomooncake:<bcrypt>:user`, hashes from `ntfy user hash`) and `AUTH_TOKENS` (`khoa:tk_<29 [a-z0-9]>:totoro,chocomooncake:tk_…:hanamichi`) (**populate out of band**)
+- `secrets-production/ntfy/config` — ntfy `AUTH_USERS` (`khoa:<bcrypt $2a$>:admin`, the hash from `ntfy user hash`) and `AUTH_TOKENS` (`khoa:tk_<29 [a-z0-9]>:totoro`) (**populate out of band**). Only the admin: the mesh's members are invited from the admin's desktop, never added here
 - `secrets-production/zot/htpasswd` — zot CLI basic-auth `htpasswd` file (bcrypt lines, `htpasswd -bBn`; **populate out of band**)
 - `secrets-production/zot/s3` — Ceph S3 `access-key`/`secret-key` for the zot blob store (copy from the argus `rook-ceph` secret `rook-ceph-object-user-rpcu-rpcu`; **populate out of band**)
 - `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent,jellystat,jellysweep,zot,...}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read. (`zot/oidc` is additionally read BACK to template zot's OIDC credentials file.)
@@ -552,7 +552,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: November 2026 (Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `mesh-*` in git) for nixbook-shell's mesh between desktops. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
+**Last Updated**: November 2026 (ntfy: no ACL lines — members are invited through ntfy's admin API from nixbook-shell; Vault holds only the admin. — Prior: Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `mesh-*` in git) for nixbook-shell's mesh between desktops. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
 OpenChoreo's `POST /api/v1alpha1/autobuild` GitHub webhook endpoint → platform
 cluster `gateway-default` `172.16.255.118:80`.) — Prior: 2026-09-28 (Third requests/limits pass from 72h Mimir
 p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld
