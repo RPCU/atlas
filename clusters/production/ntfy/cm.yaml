@@ -28,11 +28,12 @@ data:
     enable-signup: false
     enable-login: true
     auth-access:
-      # nixbook-shell's link between totoro (khoa) and hanamichi
-      # (chocomooncake): nudges, presence, watch-together invites. The
-      # payloads are end-to-end encrypted by the desktops.
-      - "khoa:couple-*:rw"
-      - "chocomooncake:couple-*:rw"
+      # nixbook-shell's mesh (nixbook: docs/nixbook-shell/mesh.md): the
+      # members' desktops talk on mesh-<hash of the mesh key> topics, the
+      # payloads end-to-end encrypted by the desktops. Adding someone: their
+      # user + token in Vault (secrets-production/ntfy/config) and a line here.
+      - "khoa:mesh-*:rw"
+      - "chocomooncake:mesh-*:rw"
 
     enable-metrics: true
     metrics-listen-http: ":9090"
