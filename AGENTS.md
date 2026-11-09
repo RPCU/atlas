@@ -248,6 +248,32 @@ its docs); the PVC is picked up again as-is. Vault
 `secrets-production/agentgateway/*` and `secrets-production/openwebui/config`
 are left in place.
 
+**Notifications** (in namespace `ntfy`; the namespace is declared in
+`ntfy/namespace.yaml` with `kustomize.toolkit.fluxcd.io/prune: disabled`):
+
+- `ntfy/` - **ntfy** push-notification server (image `binwiederhier/ntfy:v2.34.0`,
+  plain manifests, 1 replica, `Recreate`: SQLite on an RWO volume). Used by
+  nixbook-shell's link between two desktops (totoro/khoa ↔ hanamichi/chocomooncake:
+  nudges, presence, watch-together invites; payloads end-to-end encrypted by the
+  desktops, so the server only relays ciphertext).
+  - `cm.yaml` - ConfigMap `ntfy-config` (`/etc/ntfy/server.yml`): `base-url
+    https://ntfy.rpcu.io`, `behind-proxy`, cache + attachments kept 72h (1G total,
+    15M per file), **`auth-default-access: deny-all`**, signup off, the ACL
+    (`auth-access`: `khoa`/`chocomooncake` → `couple-*` rw), metrics on `:9090`.
+    Users, ACL entries and tokens are **provisioned at every start**: removing one
+    from the config/Vault deletes it from `user.db`.
+  - `secrets.yaml` - ESO `ExternalSecret` `ntfy-secrets` (`AUTH_USERS`/`AUTH_TOKENS`
+    ← Vault `secrets-production/ntfy/config`) → env `NTFY_AUTH_USERS`/`NTFY_AUTH_TOKENS`.
+    **Populate out of band.** Hashes must come from `ntfy user hash` (`$2a$`):
+    `htpasswd` writes `$2y$`, which ntfy rejects at start.
+  - `pvc.yaml` - `ntfy-data` 2Gi RWO (default Cinder SC): `cache.db`, `user.db`, attachments
+  - `deploy.yaml` - non-root (1000), read-only root fs, `/v1/health` probes, 10m/32Mi requests, 256Mi limit
+  - `service.yaml` - `ntfy` (http 80 → 8080, metrics 9090)
+  - `httproute.yaml` - **Public**: `ntfy.rpcu.io` on `https-external`, request/backend
+    timeouts 3600s (subscribers hold a JSON stream/WebSocket open; ntfy keeps it alive
+    every 45s and clients reconnect with `since`)
+  - `servicemonitor.yaml` - scrapes `:9090/metrics` (`release: kube-prometheus-stack`)
+
 ### infrastructure/ - Production-Specific Glue
 
 **cert-manager/** — NOT a cert-manager install (that comes from Sveltos).
@@ -329,6 +355,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 - `secrets-production/jellysweep/config` — jellysweep `sessionKey` + `jellyfinApiKey`/`seerrApiKey`/`jellystatApiKey` (**populate out of band**)
 - `secrets-production/palworld/config` — palworld `ADMIN_PASSWORD`/`SERVER_PASSWORD`/`PLAYIT_SECRET_KEY` (playit sidecar) + `DISCORD_WEBHOOK_URL` (Discord lifecycle notifications), all consumed by the `palworld-secrets` ExternalSecret (**populate out of band**)
 - `secrets-production/dst/config` — DST `CLUSTER_TOKEN` (Klei server token), `CLUSTER_PASSWORD`, `CLUSTER_KEY` (shard link) + `PLAYIT_SECRET_KEY` (DST's own playit agent), consumed by the `dst-secrets` ExternalSecret (**populate out of band**)
+- `secrets-production/ntfy/config` — ntfy `AUTH_USERS` (`khoa:<bcrypt $2a$>:user,chocomooncake:<bcrypt>:user`, hashes from `ntfy user hash`) and `AUTH_TOKENS` (`khoa:tk_<29 [a-z0-9]>:totoro,chocomooncake:tk_…:hanamichi`) (**populate out of band**)
 - `secrets-production/zot/htpasswd` — zot CLI basic-auth `htpasswd` file (bcrypt lines, `htpasswd -bBn`; **populate out of band**)
 - `secrets-production/zot/s3` — Ceph S3 `access-key`/`secret-key` for the zot blob store (copy from the argus `rook-ceph` secret `rook-ceph-object-user-rpcu-rpcu`; **populate out of band**)
 - `secrets-production/{jellyfin,radarr,prowlarr,qbittorrent,jellystat,jellysweep,zot,...}/oidc` — **PushSecrets** (written BY the cluster): the Crossplane Oidc connection secrets are pushed UP to Vault for backup/reuse. Note PushSecret requires the per-cluster Vault policy to allow create/update, not just read. (`zot/oidc` is additionally read BACK to template zot's OIDC credentials file.)
@@ -355,6 +382,7 @@ KV-v2 mount `secrets-production`). Paths in use:
 | palworld-exporter | v0.0.3 (Banh-Canh/palworld-exporter-go)   | `clusters/production/palworld/deploy.yaml`                                                                |
 | dst (superjump22) | public-762172                             | `clusters/production/dst/deploy.yaml`                                                                     |
 | zot               | v2.1.19 (image) / 0.1.122 (chart)         | `clusters/production/zot/helmrelease.yaml`                                                                |
+| ntfy              | v2.34.0                                   | `clusters/production/ntfy/deploy.yaml`                                                                    |
 
 Crossplane / provider-zitadel / kgateway / cert-manager versions are pinned in
 **argus**, not here.
@@ -420,7 +448,7 @@ Reconciliation order (from `clusters/production/`):
 7. **crossplane** → Crossplane Helm install from the ARGUS repo
 8. **crossplane-zitadel** (dependsOn crossplane) → provider-zitadel package from the ARGUS repo
 9. **crossplane-resources** (dependsOn crossplane-zitadel, prune: false) → ProviderConfig + the Oidc apps
-10. **Apps** (applied directly by the `atlas` Kustomization, no per-app Flux Kustomizations): jellyfin, radarr, prowlarr, qbittorrent, sonarr, seerr, bazarr, jellystat, jellysweep, palworld, zot — each oauth2-proxy'd app's HelmRelease waits on its `<app>-oidc` connection secret (written by Crossplane) and the cookie-secret ExternalSecret; jellystat additionally waits on the CNPG `jellystat-postgres` cluster; jellysweep + zot use native OIDC (no oauth2-proxy); zot's HelmRelease `dependsOn` its `zot-secret`/`zot-s3`/`zot-oidc-credentials` ExternalSecrets and stores blobs in the argus Ceph S3 store
+10. **Apps** (applied directly by the `atlas` Kustomization, no per-app Flux Kustomizations): jellyfin, radarr, prowlarr, qbittorrent, sonarr, seerr, bazarr, jellystat, jellysweep, palworld, zot, ntfy — each oauth2-proxy'd app's HelmRelease waits on its `<app>-oidc` connection secret (written by Crossplane) and the cookie-secret ExternalSecret; jellystat additionally waits on the CNPG `jellystat-postgres` cluster; jellysweep + zot use native OIDC (no oauth2-proxy); zot's HelmRelease `dependsOn` its `zot-secret`/`zot-s3`/`zot-oidc-credentials` ExternalSecrets and stores blobs in the argus Ceph S3 store
 
 ---
 
@@ -524,7 +552,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
+**Last Updated**: November 2026 (Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `couple-*` in git) for nixbook-shell's desktop-to-desktop link. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
 OpenChoreo's `POST /api/v1alpha1/autobuild` GitHub webhook endpoint → platform
 cluster `gateway-default` `172.16.255.118:80`.) — Prior: 2026-09-28 (Third requests/limits pass from 72h Mimir
 p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld

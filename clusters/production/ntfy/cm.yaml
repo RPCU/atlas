@@ -1,0 +1,39 @@
+# ntfy server config. Users and their access tokens come from Vault
+# (NTFY_AUTH_USERS / NTFY_AUTH_TOKENS, see secrets.yaml); everything else,
+# including who may use which topic, lives here. Users, ACL entries and
+# tokens are "provisioned" at every start: removing one here (or in Vault)
+# deletes it from the user database.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-config
+data:
+  server.yml: |
+    base-url: "https://ntfy.rpcu.io"
+    listen-http: ":8080"
+    behind-proxy: true
+
+    # Messages and attachments wait 72h for a subscriber that is offline
+    # (a laptop shut for the weekend).
+    cache-file: "/var/lib/ntfy/cache.db"
+    cache-duration: "72h"
+    attachment-cache-dir: "/var/lib/ntfy/attachments"
+    attachment-total-size-limit: "1G"
+    attachment-file-size-limit: "15M"
+    attachment-expiry-duration: "72h"
+
+    # Closed by default: only provisioned users, only their topics.
+    auth-file: "/var/lib/ntfy/user.db"
+    auth-default-access: "deny-all"
+    enable-signup: false
+    enable-login: true
+    auth-access:
+      # nixbook-shell's link between totoro (khoa) and hanamichi
+      # (chocomooncake): nudges, presence, watch-together invites. The
+      # payloads are end-to-end encrypted by the desktops.
+      - "khoa:couple-*:rw"
+      - "chocomooncake:couple-*:rw"
+
+    enable-metrics: true
+    metrics-listen-http: ":9090"
+    log-level: "info"

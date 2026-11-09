@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+  labels:
+    app: ntfy
+spec:
+  # RWO volume holding SQLite databases: never two pods at once.
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ntfy
+  template:
+    metadata:
+      labels:
+        app: ntfy
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ntfy
+          image: binwiederhier/ntfy:v2.34.0
+          args: ["serve", "--config", "/etc/ntfy/server.yml"]
+          env:
+            - name: NTFY_AUTH_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: ntfy-secrets
+                  key: AUTH_USERS
+            - name: NTFY_AUTH_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: ntfy-secrets
+                  key: AUTH_TOKENS
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ntfy
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/ntfy
+      volumes:
+        - name: config
+          configMap:
+            name: ntfy-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: ntfy-data
