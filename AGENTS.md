@@ -253,13 +253,13 @@ are left in place.
 
 - `ntfy/` - **ntfy** push-notification server (image `binwiederhier/ntfy:v2.34.0`,
   plain manifests, 1 replica, `Recreate`: SQLite on an RWO volume). Used by
-  nixbook-shell's link between two desktops (totoro/khoa ↔ hanamichi/chocomooncake:
-  nudges, presence, watch-together invites; payloads end-to-end encrypted by the
-  desktops, so the server only relays ciphertext).
+  nixbook-shell's **mesh** between people's desktops (messages, status, read
+  receipts; payloads end-to-end encrypted by the desktops, so the server only
+  relays ciphertext).
   - `cm.yaml` - ConfigMap `ntfy-config` (`/etc/ntfy/server.yml`): `base-url
     https://ntfy.rpcu.io`, `behind-proxy`, cache + attachments kept 72h (1G total,
     15M per file), **`auth-default-access: deny-all`**, signup off, the ACL
-    (`auth-access`: `khoa`/`chocomooncake` → `couple-*` rw), metrics on `:9090`.
+    (`auth-access`: `khoa`/`chocomooncake` → `mesh-*` rw; adding a member = their user + token in Vault and a line here), metrics on `:9090`.
     Users, ACL entries and tokens are **provisioned at every start**: removing one
     from the config/Vault deletes it from `user.db`.
   - `secrets.yaml` - ESO `ExternalSecret` `ntfy-secrets` (`AUTH_USERS`/`AUTH_TOKENS`
@@ -552,7 +552,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: November 2026 (Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `couple-*` in git) for nixbook-shell's desktop-to-desktop link. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
+**Last Updated**: November 2026 (Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `mesh-*` in git) for nixbook-shell's mesh between desktops. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
 OpenChoreo's `POST /api/v1alpha1/autobuild` GitHub webhook endpoint → platform
 cluster `gateway-default` `172.16.255.118:80`.) — Prior: 2026-09-28 (Third requests/limits pass from 72h Mimir
 p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld
