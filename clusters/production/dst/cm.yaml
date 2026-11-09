@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dst-config
+data:
+  # __CLUSTER_PASSWORD__ / __CLUSTER_KEY__ are filled from dst-secrets by the
+  # `render-config` init container, which rewrites these files on every start
+  # (world saves under Master/save and Caves/save are never touched).
+  cluster.ini: |
+    [GAMEPLAY]
+    game_mode = survival
+    max_players = 6
+    pvp = false
+    pause_when_empty = true
+
+    [NETWORK]
+    cluster_name = RPCU DST
+    cluster_description = RPCU Don't Starve Together
+    cluster_password = __CLUSTER_PASSWORD__
+    cluster_intention = cooperative
+    cluster_language = en
+    lan_only_cluster = false
+    offline_cluster = false
+    tick_rate = 15
+
+    [MISC]
+    console_enabled = true
+    max_snapshots = 6
+
+    [SHARD]
+    shard_enabled = true
+    # Both shards run in the same Pod, so the shard link stays on localhost.
+    bind_ip = 127.0.0.1
+    master_ip = 127.0.0.1
+    master_port = 10888
+    cluster_key = __CLUSTER_KEY__
+  # Both shards share the Pod network namespace: every port must differ.
+  master-server.ini: |
+    [NETWORK]
+    server_port = 10999
+
+    [SHARD]
+    is_master = true
+    name = Master
+
+    [STEAM]
+    master_server_port = 27018
+    authentication_port = 8768
+
+    [ACCOUNT]
+    encode_user_path = true
+  caves-server.ini: |
+    [NETWORK]
+    server_port = 11000
+
+    [SHARD]
+    is_master = false
+    name = Caves
+
+    [STEAM]
+    master_server_port = 27019
+    authentication_port = 8769
+
+    [ACCOUNT]
+    encode_user_path = true
+  caves-worldgenoverride.lua: |
+    return {
+      override_enabled = true,
+      preset = "DST_CAVE",
+    }
