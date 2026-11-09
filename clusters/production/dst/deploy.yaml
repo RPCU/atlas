@@ -33,14 +33,12 @@ spec:
             - |
               set -euo pipefail
               c=/save/Cluster_1
-              mkdir -p "$c/Master" "$c/Caves"
+              mkdir -p "$c/Master"
               sed -e "s|__CLUSTER_PASSWORD__|${CLUSTER_PASSWORD}|" \
                   -e "s|__CLUSTER_KEY__|${CLUSTER_KEY}|" \
                   /config/cluster.ini > "$c/cluster.ini"
               printf '%s' "$CLUSTER_TOKEN" > "$c/cluster_token.txt"
               cp /config/master-server.ini "$c/Master/server.ini"
-              cp /config/caves-server.ini "$c/Caves/server.ini"
-              cp /config/caves-worldgenoverride.lua "$c/Caves/worldgenoverride.lua"
           envFrom:
             - secretRef:
                 name: dst-secrets
@@ -84,13 +82,13 @@ spec:
                   - /bin/bash
                   - -c
                   - echo 'c_shutdown(true)' > /proc/1/fd/0; sleep 50
-          # Important workload: requests only, no limits. Sized to fit the
-          # ~340m CPU request headroom left on the busiest-free worker
-          # (2026-11-09); CPU bursts above it freely.
+          # Important workload: requests only, no limits. Overworld only:
+          # Caves was dropped 2026-11-09 (load on the saturated workers).
+          # Observed ~120-250m CPU / 1.4Gi; CPU bursts above it freely.
           resources:
             requests:
-              memory: 1Gi
-              cpu: 200m
+              memory: 1536Mi
+              cpu: 250m
           ports:
             - name: master-game
               containerPort: 10999
@@ -99,42 +97,8 @@ spec:
             - name: data
               mountPath: /home/steam/dst/save
               subPath: save
-        - name: caves
-          image: docker.io/superjump22/dontstarvetogether:public-762172
-          args:
-            - -skip_update_server_mods
-            - -ugc_directory
-            - /home/steam/dst/game/ugc_mods
-            - -persistent_storage_root
-            - /home/steam/dst
-            - -conf_dir
-            - save
-            - -cluster
-            - Cluster_1
-            - -shard
-            - Caves
-          stdin: true
-          lifecycle:
-            preStop:
-              exec:
-                command:
-                  - /bin/bash
-                  - -c
-                  - echo 'c_shutdown(true)' > /proc/1/fd/0; sleep 50
-          resources:
-            requests:
-              memory: 768Mi
-              cpu: 100m
-          ports:
-            - name: caves-game
-              containerPort: 11000
-              protocol: UDP
-          volumeMounts:
-            - name: data
-              mountPath: /home/steam/dst/save
-              subPath: save
-        # playit.gg tunnels (configured in the playit dashboard):
-        #   UDP -> 127.0.0.1:10999 (Master), UDP -> 127.0.0.1:11000 (Caves)
+        # playit.gg tunnel (configured in the playit dashboard):
+        #   UDP -> 127.0.0.1:10999 (Master)
         - name: playit
           image: ghcr.io/playit-cloud/playit-agent:1.1.0
           resources:

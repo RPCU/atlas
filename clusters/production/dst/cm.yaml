@@ -5,7 +5,7 @@ metadata:
 data:
   # __CLUSTER_PASSWORD__ / __CLUSTER_KEY__ are filled from dst-secrets by the
   # `render-config` init container, which rewrites these files on every start
-  # (world saves under Master/save and Caves/save are never touched).
+  # (the world save under Master/save is never touched).
   cluster.ini: |
     [GAMEPLAY]
     game_mode = survival
@@ -28,13 +28,8 @@ data:
     max_snapshots = 6
 
     [SHARD]
-    shard_enabled = true
-    # Both shards run in the same Pod, so the shard link stays on localhost.
-    bind_ip = 127.0.0.1
-    master_ip = 127.0.0.1
-    master_port = 10888
-    cluster_key = __CLUSTER_KEY__
-  # Both shards share the Pod network namespace: every port must differ.
+    # Single shard (overworld only); Caves removed 2026-11-09.
+    shard_enabled = false
   master-server.ini: |
     [NETWORK]
     server_port = 10999
@@ -49,22 +44,3 @@ data:
 
     [ACCOUNT]
     encode_user_path = true
-  caves-server.ini: |
-    [NETWORK]
-    server_port = 11000
-
-    [SHARD]
-    is_master = false
-    name = Caves
-
-    [STEAM]
-    master_server_port = 27019
-    authentication_port = 8769
-
-    [ACCOUNT]
-    encode_user_path = true
-  caves-worldgenoverride.lua: |
-    return {
-      override_enabled = true,
-      preset = "DST_CAVE",
-    }
