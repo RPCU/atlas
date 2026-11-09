@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dst
+  labels:
+    app: dst
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dst
+  template:
+    metadata:
+      labels:
+        app: dst
+        # Measure only: Ballast must not add memory limits to a live game
+        # server (an OOM-kill drops every connected player).
+        ballast.tightlinesoftware.com/mode: measure
+    spec:
+      terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
+      initContainers:
+        # Writes cluster.ini / server.ini / cluster_token.txt into the save
+        # volume from the ConfigMap + Vault secrets. Reuses the game image
+        # (already pulled for the shards) for its shell.
+        - name: render-config
+          image: docker.io/superjump22/dontstarvetogether:public-762172
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              c=/save/Cluster_1
+              mkdir -p "$c/Master" "$c/Caves"
+              sed -e "s|__CLUSTER_PASSWORD__|${CLUSTER_PASSWORD}|" \
+                  -e "s|__CLUSTER_KEY__|${CLUSTER_KEY}|" \
+                  /config/cluster.ini > "$c/cluster.ini"
+              printf '%s' "$CLUSTER_TOKEN" > "$c/cluster_token.txt"
+              cp /config/master-server.ini "$c/Master/server.ini"
+              cp /config/caves-server.ini "$c/Caves/server.ini"
+              cp /config/caves-worldgenoverride.lua "$c/Caves/worldgenoverride.lua"
+          envFrom:
+            - secretRef:
+                name: dst-secrets
+          resources:
+            requests:
+              memory: 16Mi
+              cpu: 5m
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /save
+              subPath: save
+            - name: config
+              mountPath: /config
+              readOnly: true
+      containers:
+        # Image ENTRYPOINT is the DST server binary; only args are given.
+        # Game files are baked into the image (tag = DST game version), so an
+        # update is an image bump; the PVC only holds the cluster/saves.
+        - name: master
+          image: docker.io/superjump22/dontstarvetogether:public-762172
+          args:
+            - -skip_update_server_mods
+            - -ugc_directory
+            - /home/steam/dst/game/ugc_mods
+            - -persistent_storage_root
+            - /home/steam/dst
+            - -conf_dir
+            - save
+            - -cluster
+            - Cluster_1
+            - -shard
+            - Master
+          # stdin lets preStop send console commands to the server (PID 1).
+          stdin: true
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - echo 'c_shutdown(true)' > /proc/1/fd/0; sleep 50
+          # Important workload: requests only, no limits. Sized to fit the
+          # ~340m CPU request headroom left on the busiest-free worker
+          # (2026-11-09); CPU bursts above it freely.
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 200m
+          ports:
+            - name: master-game
+              containerPort: 10999
+              protocol: UDP
+          volumeMounts:
+            - name: data
+              mountPath: /home/steam/dst/save
+              subPath: save
+        - name: caves
+          image: docker.io/superjump22/dontstarvetogether:public-762172
+          args:
+            - -skip_update_server_mods
+            - -ugc_directory
+            - /home/steam/dst/game/ugc_mods
+            - -persistent_storage_root
+            - /home/steam/dst
+            - -conf_dir
+            - save
+            - -cluster
+            - Cluster_1
+            - -shard
+            - Caves
+          stdin: true
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - echo 'c_shutdown(true)' > /proc/1/fd/0; sleep 50
+          resources:
+            requests:
+              memory: 768Mi
+              cpu: 100m
+          ports:
+            - name: caves-game
+              containerPort: 11000
+              protocol: UDP
+          volumeMounts:
+            - name: data
+              mountPath: /home/steam/dst/save
+              subPath: save
+        # playit.gg tunnels (configured in the playit dashboard):
+        #   UDP -> 127.0.0.1:10999 (Master), UDP -> 127.0.0.1:11000 (Caves)
+        - name: playit
+          image: ghcr.io/playit-cloud/playit-agent:1.1.0
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 5m
+            limits:
+              memory: 128Mi
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dst-secrets
+                  key: PLAYIT_SECRET_KEY
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dst-data
+        - name: config
+          configMap:
+            name: dst-config
