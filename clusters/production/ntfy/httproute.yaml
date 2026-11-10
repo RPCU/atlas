@@ -16,8 +16,8 @@ spec:
       # Subscribers hold a JSON stream / WebSocket open; ntfy keeps it alive
       # every 45s and clients reconnect (with `since`) when it is cut.
       timeouts:
-        request: "3600s"
-        backendRequest: "3600s"
+        request: "21600s"
+        backendRequest: "21600s"
       backendRefs:
         - name: ntfy
           port: 80
