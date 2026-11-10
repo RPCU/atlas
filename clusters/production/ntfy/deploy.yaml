@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ntfy
-          image: binwiederhier/ntfy:v2.34.0
+          image: binwiederhier/ntfy:v2.37.2
           args: ["serve", "--config", "/etc/ntfy/server.yml"]
           env:
             - name: NTFY_AUTH_USERS
