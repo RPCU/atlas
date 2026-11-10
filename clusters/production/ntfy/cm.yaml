@@ -19,10 +19,20 @@ data:
     # still expire after 72h (below).
     cache-file: "/var/lib/ntfy/cache.db"
     cache-duration: "2160h"
+
+    # The mesh's files (images, GIFs, documents), encrypted on the desktops:
+    # each desktop downloads a file as soon as its message arrives, so 72h
+    # only matters to one that was off longer. Up to 100M a file (under the
+    # Gateway's 128Mi per-connection buffer), 1500M in all on the 2Gi
+    # volume. ntfy's per-sender defaults (100M stored, 500M a day of
+    # transfer, uploads and downloads) would cap a 100M file's sharing at a
+    # few people: raised too. The desktops read the limits from /v1/account.
     attachment-cache-dir: "/var/lib/ntfy/attachments"
-    attachment-total-size-limit: "1G"
-    attachment-file-size-limit: "15M"
+    attachment-total-size-limit: "1500M"
+    attachment-file-size-limit: "100M"
     attachment-expiry-duration: "72h"
+    visitor-attachment-total-size-limit: "1G"
+    visitor-attachment-daily-bandwidth-limit: "5G"
 
     # Closed by default: only provisioned users, only their topics.
     auth-file: "/var/lib/ntfy/user.db"

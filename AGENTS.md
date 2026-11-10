@@ -257,8 +257,8 @@ are left in place.
   receipts; payloads end-to-end encrypted by the desktops, so the server only
   relays ciphertext).
   - `cm.yaml` - ConfigMap `ntfy-config` (`/etc/ntfy/server.yml`): `base-url
-    https://ntfy.rpcu.io`, `behind-proxy`, messages kept 3 months (`cache-duration: 2160h`), attachments 72h (1G total,
-    15M per file), **`auth-default-access: deny-all`**, signup off, the ACL
+    https://ntfy.rpcu.io`, `behind-proxy`, messages kept 3 months (`cache-duration: 2160h`), attachments 72h (1500M total on the 2Gi volume,
+    100M per file — nixbook-shell's mesh files; per sender 1G stored and 5G a day of transfer, raised from ntfy's 100M/500M defaults), **`auth-default-access: deny-all`**, signup off, the ACL
     (`auth-access: []`: the admin `khoa` — `AUTH_USERS` role `admin` in Vault — reaches every topic, and invites the mesh's members from their desktop through ntfy's admin API (accounts with `mesh-*` access in `user.db` on the volume); **an ACL line for an admin stops ntfy from starting**), metrics on `:9090`.
     Users, ACL entries and tokens are **provisioned at every start**: removing one
     from the config/Vault deletes it from `user.db`.
