@@ -257,8 +257,7 @@ are left in place.
   receipts; payloads end-to-end encrypted by the desktops, so the server only
   relays ciphertext).
   - `cm.yaml` - ConfigMap `ntfy-config` (`/etc/ntfy/server.yml`): `base-url
-    https://ntfy.rpcu.io`, `behind-proxy`, messages kept 3 months (`cache-duration: 2160h`), attachments 72h (1500M total on the 2Gi volume,
-    100M per file — nixbook-shell's mesh files; per sender 1G stored and 5G a day of transfer, raised from ntfy's 100M/500M defaults), **`auth-default-access: deny-all`**, signup off, the ACL
+    https://ntfy.rpcu.io`, `behind-proxy`, messages and attachments kept a year (`cache-duration` / `attachment-expiry-duration: 8760h`; attachments = nixbook-shell's mesh files, 10G per file, 50G total on the 60Gi volume, per sender 50G stored and 200G a day of transfer, raised from ntfy's 100M/500M defaults), **`auth-default-access: deny-all`**, signup off, the ACL
     (`auth-access: []`: the admin `khoa` — `AUTH_USERS` role `admin` in Vault — reaches every topic, and invites the mesh's members from their desktop through ntfy's admin API (accounts with `mesh-*` access in `user.db` on the volume); **an ACL line for an admin stops ntfy from starting**), metrics on `:9090`.
     Users, ACL entries and tokens are **provisioned at every start**: removing one
     from the config/Vault deletes it from `user.db`.
@@ -266,11 +265,11 @@ are left in place.
     ← Vault `secrets-production/ntfy/config`) → env `NTFY_AUTH_USERS`/`NTFY_AUTH_TOKENS`.
     **Populate out of band.** Hashes must come from `ntfy user hash` (`$2a$`):
     `htpasswd` writes `$2y$`, which ntfy rejects at start.
-  - `pvc.yaml` - `ntfy-data` 2Gi RWO (default Cinder SC): `cache.db`, `user.db`, attachments
+  - `pvc.yaml` - `ntfy-data` 60Gi RWO (default Cinder SC, expandable: grown from 2Gi in git): `cache.db`, `user.db`, attachments
   - `deploy.yaml` - non-root (1000), read-only root fs, `/v1/health` probes, 10m/32Mi requests, 256Mi limit
   - `service.yaml` - `ntfy` (http 80 → 8080, metrics 9090)
   - `httproute.yaml` - **Public**: `ntfy.rpcu.io` on `https-external`, request/backend
-    timeouts 3600s (subscribers hold a JSON stream/WebSocket open; ntfy keeps it alive
+    timeouts 21600s (10G mesh uploads on a slow uplink; subscribers hold a JSON stream/WebSocket open; ntfy keeps it alive
     every 45s and clients reconnect with `since`)
   - `servicemonitor.yaml` - scrapes `:9090/metrics` (`release: kube-prometheus-stack`)
 
@@ -552,7 +551,7 @@ Atlas is the **application layer** for RPCU's production cluster:
 
 ---
 
-**Last Updated**: November 2026 (ntfy keeps messages 3 months (`cache-duration: 2160h`), attachments still 72h. — Prior: ntfy: no ACL lines — members are invited through ntfy's admin API from nixbook-shell; Vault holds only the admin. — Prior: Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `mesh-*` in git) for nixbook-shell's mesh between desktops. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
+**Last Updated**: November 2026 (ntfy keeps messages and the mesh's files a year: 10G per file, 50G total, 60Gi volume, 6h HTTPRoute timeouts. — Prior: ntfy keeps messages 3 months (`cache-duration: 2160h`), attachments still 72h. — Prior: ntfy: no ACL lines — members are invited through ntfy's admin API from nixbook-shell; Vault holds only the admin. — Prior: Added **ntfy** (ns `ntfy`, `ntfy.rpcu.io`, deny-all, users/tokens from Vault `secrets-production/ntfy/config`, ACL `mesh-*` in git) for nixbook-shell's mesh between desktops. — Prior: 2026-09-30 (`openchoreo.rpcu.io`: public route exposing only
 OpenChoreo's `POST /api/v1alpha1/autobuild` GitHub webhook endpoint → platform
 cluster `gateway-default` `172.16.255.118:80`.) — Prior: 2026-09-28 (Third requests/limits pass from 72h Mimir
 p95/max across 26 files — media apps, oauth2-proxies 5m/16Mi, palworld

@@ -13,26 +13,23 @@ data:
     listen-http: ":8080"
     behind-proxy: true
 
-    # Messages wait 3 months (90 days) for a desktop that is offline: the
-    # mesh's history catches up after holidays. Tiny encrypted payloads:
-    # ~16 MB for three people's status updates over 90 days. Attachments
-    # still expire after 72h (below).
+    # Messages and the mesh's files (images, GIFs, documents, encrypted on
+    # the desktops) wait a year for a desktop that is offline: the mesh's
+    # history catches up after anything, and a file stays there to fetch.
+    # Tiny encrypted payloads for messages (~16 MB for three people's
+    # status updates over 90 days); files up to 10G each, 50G in all on the
+    # 60Gi volume (pvc.yaml). ntfy's per-sender defaults (100M stored, 500M
+    # a day of uploads and downloads) raised to the whole store and 200G a
+    # day. The desktops read these limits from /v1/account; uploads that
+    # long need the HTTPRoute's 6h timeout.
     cache-file: "/var/lib/ntfy/cache.db"
-    cache-duration: "2160h"
-
-    # The mesh's files (images, GIFs, documents), encrypted on the desktops:
-    # each desktop downloads a file as soon as its message arrives, so 72h
-    # only matters to one that was off longer. Up to 100M a file (under the
-    # Gateway's 128Mi per-connection buffer), 1500M in all on the 2Gi
-    # volume. ntfy's per-sender defaults (100M stored, 500M a day of
-    # transfer, uploads and downloads) would cap a 100M file's sharing at a
-    # few people: raised too. The desktops read the limits from /v1/account.
+    cache-duration: "8760h"
     attachment-cache-dir: "/var/lib/ntfy/attachments"
-    attachment-total-size-limit: "1500M"
-    attachment-file-size-limit: "100M"
-    attachment-expiry-duration: "72h"
-    visitor-attachment-total-size-limit: "1G"
-    visitor-attachment-daily-bandwidth-limit: "5G"
+    attachment-total-size-limit: "50G"
+    attachment-file-size-limit: "10G"
+    attachment-expiry-duration: "8760h"
+    visitor-attachment-total-size-limit: "50G"
+    visitor-attachment-daily-bandwidth-limit: "200G"
 
     # Closed by default: only provisioned users, only their topics.
     auth-file: "/var/lib/ntfy/user.db"
