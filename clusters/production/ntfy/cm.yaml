@@ -13,10 +13,12 @@ data:
     listen-http: ":8080"
     behind-proxy: true
 
-    # Messages and attachments wait 72h for a subscriber that is offline
-    # (a laptop shut for the weekend).
+    # Messages wait 3 months (90 days) for a desktop that is offline: the
+    # mesh's history catches up after holidays. Tiny encrypted payloads:
+    # ~16 MB for three people's status updates over 90 days. Attachments
+    # still expire after 72h (below).
     cache-file: "/var/lib/ntfy/cache.db"
-    cache-duration: "72h"
+    cache-duration: "2160h"
     attachment-cache-dir: "/var/lib/ntfy/attachments"
     attachment-total-size-limit: "1G"
     attachment-file-size-limit: "15M"
